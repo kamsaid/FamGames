@@ -1,0 +1,31 @@
+{
+  "name": "family-together-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Family Together trivia app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "socket.io-client": "^4.8.1"
+  },
+  "keywords": [
+    "family",
+    "trivia",
+    "game",
+    "api"
+  ],
+  "author": "Family Together Team",
+  "license": "MIT"
+}
