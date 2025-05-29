@@ -166,6 +166,56 @@ class GameService {
   }
 
   /**
+   * End a game session and mark room as finished
+   * @param {string} familyId - The family identifier
+   * @returns {Object|null} Final room data with game state or null if not found
+   */
+  endGame(familyId) {
+    const room = this.activeRooms.get(familyId);
+    if (!room) {
+      console.log(`❌ Cannot end game: Room not found for family ${familyId}`);
+      return null;
+    }
+
+    // Mark game as finished
+    room.gameState.status = 'finished';
+    room.gameState.finishedAt = new Date().toISOString();
+
+    console.log(`🏁 Game ended for family: ${familyId}`);
+    
+    // Return final room data for processing
+    return {
+      familyId: room.familyId,
+      players: room.players,
+      gameState: room.gameState,
+      createdAt: room.createdAt,
+      finishedAt: room.gameState.finishedAt
+    };
+  }
+
+  /**
+   * Clean up a finished game room (remove after final processing)
+   * @param {string} familyId - The family identifier
+   * @returns {boolean} True if room was removed, false if not found
+   */
+  cleanupRoom(familyId) {
+    const wasRemoved = this.activeRooms.delete(familyId);
+    
+    // Also remove socket mappings for this family
+    for (const [socketId, playerData] of this.socketToFamily.entries()) {
+      if (playerData.familyId === familyId) {
+        this.socketToFamily.delete(socketId);
+      }
+    }
+
+    if (wasRemoved) {
+      console.log(`🧹 Cleaned up game room for family: ${familyId}`);
+    }
+    
+    return wasRemoved;
+  }
+
+  /**
    * Get statistics about active rooms
    * @returns {Object} Statistics object
    */

@@ -106,6 +106,35 @@ Complete a trivia session and update the family leaderboard.
 }
 ```
 
+#### POST `/trivia/generate`
+Generate new trivia questions using GPT-4o and store them in the database.
+
+**Request Body:**
+```json
+{
+  "custom_prompt": "Generate questions about space and astronomy" // Optional
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Trivia questions generated and stored successfully",
+  "generation_source": "gpt-4o",
+  "questions_count": 5,
+  "questions": [
+    {
+      "id": "question-uuid",
+      "category": "science",
+      "question": "What is the largest planet in our solar system?",
+      "choices": ["Earth", "Jupiter", "Saturn", "Mars"],
+      "difficulty": "easy"
+    }
+  ],
+  "gpt_success": true
+}
+```
+
 ### Family Management
 
 #### GET `/families`
@@ -169,7 +198,7 @@ Invite a user to join a family by email (admin only).
 ```json
 {
   "email": "user@example.com",
-  "familyId": "family-uuid"
+  "family_id": "family-uuid"
 }
 ```
 
@@ -179,12 +208,13 @@ Invite a user to join a family by email (admin only).
   "success": true,
   "message": "Invitation sent successfully",
   "data": {
-    "invitation": {
-      "id": "uuid",
+    "invite": {
+      "id": "invite-uuid",
+      "family_id": "family-uuid",
       "email": "user@example.com",
-      "family_name": "Family Name",
+      "token": "secure-invite-token",
       "expires_at": "timestamp",
-      "invite_link": "https://yourapp.com/join?token=..."
+      "created_at": "timestamp"
     }
   }
 }
@@ -196,7 +226,7 @@ Join a family using an invitation token.
 **Request Body:**
 ```json
 {
-  "token": "invitation-token"
+  "token": "secure-invite-token"
 }
 ```
 
@@ -207,11 +237,10 @@ Join a family using an invitation token.
   "message": "Successfully joined family",
   "data": {
     "family": {
-      "id": "uuid",
+      "id": "family-uuid",
       "name": "Family Name"
     },
     "membership": {
-      "id": "uuid",
       "role": "member",
       "joined_at": "timestamp"
     }
@@ -219,109 +248,108 @@ Join a family using an invitation token.
 }
 ```
 
-## WebSocket Real-time Game Rooms
+### Leaderboard
 
-The server provides real-time multiplayer trivia functionality via WebSocket connections using Socket.IO.
+#### GET `/leaderboard/:familyId`
+Get the leaderboard for a specific family.
 
-### Connection
-Connect to the game namespace:
-```javascript
-const socket = io('http://localhost:3001/game');
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "leaderboard": [
+      {
+        "id": "leaderboard-uuid",
+        "family_id": "family-uuid",
+        "user_id": "user-uuid",
+        "score": 25,
+        "streak": 5,
+        "last_played_at": "timestamp",
+        "games_played": 10,
+        "user_name": "Player Name"
+      }
+    ],
+    "family": {
+      "id": "family-uuid",
+      "name": "Family Name"
+    }
+  }
+}
 ```
+
+## WebSocket Events
+
+The server supports real-time game functionality via Socket.IO on the `/game` namespace.
 
 ### Events
 
-#### Client → Server Events
+#### `join-room`
+Join a family game room.
 
-**`join-room`** - Join a family game room
-```javascript
-socket.emit('join-room', {
-  familyId: 'family-uuid',
-  userId: 'user-uuid',
-  playerName: 'Player Name'
-});
+**Payload:**
+```json
+{
+  "familyId": "family-uuid",
+  "userId": "user-uuid",
+  "playerName": "Player Name"
+}
 ```
 
-**`leave-room`** - Leave current game room
-```javascript
-socket.emit('leave-room');
+**Response Events:**
+- `room-joined` - Successfully joined the room
+- `player-joined` - Broadcast to other players when someone joins
+- `join-room-error` - Error joining the room
+
+#### `start-game`
+Start a trivia game (host only).
+
+**Payload:**
+```json
+{
+  "familyId": "family-uuid",
+  "hostUserId": "user-uuid"
+}
 ```
 
-**`start-game`** - Start a trivia game (host only)
-```javascript
-socket.emit('start-game', {
-  familyId: 'family-uuid'
-});
+**Response Events:**
+- `game-started` - Game started with questions
+- `start-game-error` - Error starting the game
+
+#### `submit-answer`
+Submit an answer during the game.
+
+**Payload:**
+```json
+{
+  "sessionId": "session-uuid",
+  "questionIndex": 0,
+  "selectedAnswer": 1,
+  "userId": "user-uuid"
+}
 ```
 
-**`submit-answer`** - Submit answer during game
-```javascript
-socket.emit('submit-answer', {
-  sessionId: 'session-uuid',
-  questionId: 'question-uuid',
-  answer: 'selected-answer'
-});
+**Response Events:**
+- `answer-submitted` - Answer recorded
+- `submit-answer-error` - Error submitting answer
+
+#### `end-game`
+End the current game (host only).
+
+**Payload:**
+```json
+{
+  "sessionId": "session-uuid",
+  "familyId": "family-uuid"
+}
 ```
 
-#### Server → Client Events
+**Response Events:**
+- `game-ended` - Game ended with final scores
+- `leaderboard-updated` - Updated leaderboard data
+- `end-game-error` - Error ending the game
 
-**`connected`** - Connection acknowledgment
-```javascript
-socket.on('connected', (data) => {
-  // data: { message, socketId, gameStats }
-});
-```
-
-**`room-joined`** - Successfully joined room
-```javascript
-socket.on('room-joined', (data) => {
-  // data: { room, message }
-});
-```
-
-**`player-joined`** - Another player joined
-```javascript
-socket.on('player-joined', (data) => {
-  // data: { room, newPlayer, message }
-});
-```
-
-**`player-left`** - Player left the room
-```javascript
-socket.on('player-left', (data) => {
-  // data: { room, message }
-});
-```
-
-**`game-started`** - Game session began
-```javascript
-socket.on('game-started', (data) => {
-  // data: { session, questions, gameState }
-});
-```
-
-**`question-update`** - New question or game state
-```javascript
-socket.on('question-update', (data) => {
-  // data: { currentQuestion, timeRemaining, scores }
-});
-```
-
-**`answer-received`** - Answer was processed
-```javascript
-socket.on('answer-received', (data) => {
-  // data: { correct, explanation, updatedScores }
-});
-```
-
-**`game-ended`** - Session completed
-```javascript
-socket.on('game-ended', (data) => {
-  // data: { finalScores, leaderboard, gameStats }
-});
-```
-
-### Game Room Structure
+## Game Room Structure
 
 Each family can have one active game room:
 
@@ -349,48 +377,6 @@ Each family can have one active game room:
 }
 ```
 
-### Game Flow
-
-1. **Room Creation**: First player joins and becomes host
-2. **Player Joining**: Other family members join the same room
-3. **Game Start**: Host starts the game, triggering question delivery
-4. **Question Phase**: Players receive questions and submit answers
-5. **Scoring**: Real-time score updates broadcast to all players
-6. **Game End**: Final scores and leaderboard updates
-
-### Connection Management
-
-- Automatic reconnection support
-- Host migration if original host disconnects
-- Room cleanup when all players leave
-- Connection statistics and monitoring
-
-### Testing WebSocket
-
-Run the WebSocket test suite:
-```bash
-node test-websocket.js
-```
-
-**Test Coverage:**
-- Basic connection and disconnection
-- Multiple simultaneous connections
-- Server acknowledgment messages
-- Game service statistics
-
-**Join-Room Event Testing:**
-```bash
-node test-join-room.js
-```
-
-**Join-Room Test Coverage:**
-- Room creation with first player (becomes host)
-- Multiple players joining same room
-- Real-time player-joined notifications
-- Error handling for invalid data
-- Host assignment and management
-- Socket.IO room management
-
 ## Setup
 
 1. **Install Dependencies**
@@ -404,7 +390,8 @@ node test-join-room.js
    SUPABASE_URL=https://your-project-ref.supabase.co
    SUPABASE_ANON_KEY=your-anon-key
    SUPABASE_SERVICE_KEY=your-service-key
-   PORT=3001
+   OPENAI_API_KEY=your-openai-api-key
+   PORT=3000
    FRONTEND_URL=http://localhost:3000
    ```
 
@@ -416,55 +403,31 @@ node test-join-room.js
 
 4. **Start Development Server**
    ```bash
-   npm run dev
+   npm start
    ```
 
 ## Testing
 
-Run the test scripts to verify endpoints:
+### End-to-End Testing
 
-**Family Management:**
+Run the comprehensive E2E test that validates the complete trivia game flow:
+
 ```bash
-node test-families.js
+# Run the full E2E test suite
+node test-e2e-full-flow.js
 ```
 
-**Trivia Functionality:**
-```bash
-node test-trivia.js
-```
-
-**WebSocket Game Rooms:**
-```bash
-node test-websocket.js
-```
-
-**Join-Room Event:**
-```bash
-node test-join-room.js
-```
-
-For complete trivia testing with real data:
-1. Ensure questions are seeded: Run `supabase/seed_questions.sql` in Supabase SQL editor
-2. Create a family using `/families/create`
-3. Get a valid auth token from magic link login
-4. Use that token to test trivia endpoints
-
-**Testing WebSocket Integration:**
-The WebSocket test verifies:
-- Basic connection and disconnection to `/game` namespace
-- Multiple simultaneous connections
-- Server acknowledgment messages
-- Game service statistics tracking
-- Proper connection management and cleanup
-
-**Testing Join-Room Event:**
-The join-room test verifies:
-- Room creation when first player joins
-- Multiple players joining the same family room
-- Real-time notifications to existing players
-- Host assignment and management
-- Error handling for missing required fields
-- Socket.IO room broadcasting functionality
+**E2E Test Coverage:**
+The automated test validates:
+1. **Family Creation** - Create test families
+2. **Member Management** - Add family members
+3. **WebSocket Connections** - Real-time connectivity
+4. **Game Room Join** - Players joining game rooms
+5. **Trivia Game Start** - Host starting game sessions
+6. **Answer Submission** - Players submitting answers
+7. **Game Completion** - Ending games and score calculation
+8. **Leaderboard Updates** - Score persistence and ranking
+9. **Streak Tracking** - Consecutive game streak validation
 
 ## Database Schema
 

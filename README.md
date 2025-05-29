@@ -1,169 +1,218 @@
 # 🏠 Family Together
 
-A real-time, multiplayer trivia application designed to strengthen family bonds through nightly 5-minute gaming rituals.
+A real-time trivia app that brings families together through nightly 5-minute game sessions.
 
-## 🎯 Project Overview
+## 🚀 Features
 
-Family Together is a comprehensive trivia platform that brings families together through:
-- **Real-time multiplayer trivia sessions** via WebSocket connections
-- **Family management system** with secure invitations
-- **Progressive leaderboards** with streak tracking
-- **AI-generated trivia content** using GPT-4o
-- **Cross-platform support** (Web and React Native planned)
+- **Magic Link Authentication**: Secure, passwordless login
+- **Family Management**: Create and join family groups  
+- **Real-time Trivia Games**: Live multiplayer trivia sessions
+- **Dynamic Leaderboards**: Track scores and streaks
+- **Memory Vault**: Encrypted family photos and memories (AES-256)
+- **AI-Generated Content**: GPT-4o powered trivia questions
+
+## 📋 Project Status
+
+### ✅ Completed Phases
+
+- **Phase 1**: Supabase Setup ✅
+- **Phase 2**: Magic Link Auth ✅  
+- **Phase 3**: Family Management ✅
+- **Phase 4**: Trivia Game Engine ✅
+- **Phase 5**: Real-time Game Rooms (WebSockets) ✅
+- **Phase 6**: React Native Frontend ✅
+- **Phase 7**: GPT Trivia Generation ✅
+- **Phase 8**: Final Touches ✅
+  - ✅ Task 28: Streak tracking added to leaderboard
+  - ✅ Task 29: Memory Vault with encryption implemented
+  - ✅ Task 30: End-to-End testing completed
 
 ## 🏗️ Architecture
 
-This project follows a modular architecture with:
-
-- **Backend**: Node.js/Express API with Socket.IO for real-time features
-- **Database**: Supabase with Row Level Security (RLS)
-- **Authentication**: Magic link authentication via Supabase Auth
-- **Real-time**: WebSocket game rooms for multiplayer trivia
-- **Frontend**: React Native (planned)
-
-## 📁 Project Structure
-
 ```
-family-together/
-├── backend/                    # Node.js API server
-│   ├── controllers/           # Business logic controllers
-│   ├── routes/               # API route definitions
-│   ├── services/             # Core services (GameService, etc.)
-│   ├── middlewares/          # Authentication & validation
-│   ├── utils/                # Helper utilities
-│   └── test-*.js             # Test scripts
-├── supabase/                 # Database schema and policies
-├── architecture.md          # System architecture documentation
-├── tasks.md                 # Development task breakdown
-└── README.md                # This file
+[React Native App]
+    │
+    ├── Supabase Auth (login, user data)
+    ├── REST API (Node.js) – trivia, leaderboard, magic links
+    └── WebSocket – real-time game events
+          │
+       [Node.js Backend]── GPT-4o Prompting
+          │
+       [Supabase] ←→ [Redis] (realtime, pub/sub, game rooms)
 ```
 
-## 🚀 Current Development Status
-
-### ✅ Completed (Phases 1-5)
-
-- **Phase 1**: Supabase database setup with RLS policies
-- **Phase 2**: Magic link authentication system
-- **Phase 3**: Family management (create, invite, join)
-- **Phase 4**: Trivia game engine (start sessions, submit answers, scoring)
-- **Phase 5**: WebSocket server with real-time game rooms (**Tasks 15-16 Complete**)
-  - ✅ Task 15: WebSocket server setup
-  - ✅ Task 16: `join-room` event implementation
-
-### 🔄 In Progress (Phase 5 continued)
-
-- **Task 17**: `start-game` event implementation
-- **Task 18**: `submit-answer` socket event
-- **Task 19**: `end-game` event
-
-### 📋 Upcoming Phases
-
-- **Phase 6**: React Native frontend
-- **Phase 7**: GPT-4o trivia generation
-- **Phase 8**: Final touches and Memory Vault
-
-## 🛠️ Quick Start
+## 🛠️ Setup & Installation
 
 ### Prerequisites
-- Node.js 18+
-- Supabase account
+
+- Node.js 18+ 
 - npm or yarn
+- Supabase account
+- OpenAI API key (for trivia generation)
 
 ### Backend Setup
 
-1. **Navigate to backend directory**
-   ```bash
-   cd backend
-   ```
+```bash
+cd backend
+npm install
+cp .env.example .env
+# Configure your environment variables
+npm start
+```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Environment setup**
-   Create `.env` file:
-   ```env
-   SUPABASE_URL=https://your-project-ref.supabase.co
-   SUPABASE_ANON_KEY=your-anon-key
-   SUPABASE_SERVICE_KEY=your-service-key
-   PORT=3001
-   FRONTEND_URL=http://localhost:3000
-   ```
-
-4. **Database setup**
-   - Apply schema from `supabase/schema.sql` in Supabase SQL editor
-   - Seed questions using `supabase/seed_questions.sql`
-
-5. **Start development server**
-   ```bash
-   npm run dev
-   ```
-
-### Testing
-
-The project includes comprehensive test suites:
+### Frontend Setup  
 
 ```bash
-# Test family management
-node test-families.js
-
-# Test trivia functionality  
-node test-trivia.js
-
-# Test WebSocket connections
-node test-websocket.js
-
-# Test join-room event
-node test-join-room.js
+cd frontend
+npm install
+npx expo start
 ```
 
-## 🎮 WebSocket Real-time Features
+### Environment Variables
 
-Current WebSocket implementation supports:
+Create a `.env` file in the backend directory:
 
-- **Connection management** on `/game` namespace
-- **Room creation and joining** via `join-room` event
-- **Real-time player notifications** when users join/leave
-- **Automatic host assignment** and migration
-- **Comprehensive error handling** and validation
-
-### Example Usage
-
-```javascript
-const socket = io('http://localhost:3001/game');
-
-// Join a family game room
-socket.emit('join-room', {
-  familyId: 'family-uuid',
-  userId: 'user-uuid', 
-  playerName: 'Player Name'
-});
-
-// Listen for room events
-socket.on('room-joined', (data) => {
-  console.log('Joined room:', data.room);
-});
-
-socket.on('player-joined', (data) => {
-  console.log('New player:', data.newPlayer);
-});
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+OPENAI_API_KEY=your_openai_api_key
+PORT=3000
 ```
 
-## 📚 Documentation
+## 🧪 Testing
 
-- **[Backend API Documentation](backend/README.md)** - Complete API reference
-- **[Architecture Overview](architecture.md)** - System design and data flow
-- **[Development Tasks](tasks.md)** - Phase-by-phase implementation plan
+### End-to-End Testing (Task 30)
 
-## 🤝 Contributing
+Run the comprehensive E2E test that validates the complete family trivia game flow:
 
-This is currently a private development project. For questions or collaboration inquiries, please contact the maintainer.
+```bash
+# Automated E2E Test
+node run-e2e-test.js
+
+# Show manual testing instructions
+node run-e2e-test.js --manual
+```
+
+### E2E Test Coverage
+
+The automated E2E test (`test-e2e-full-flow.js`) validates:
+
+1. **Family Creation** - Create a test family
+2. **Member Management** - Add family members
+3. **WebSocket Connections** - Real-time connectivity
+4. **Game Room Join** - Players joining game rooms
+5. **Trivia Game Start** - Host starting a game session
+6. **Answer Submission** - Players submitting answers
+7. **Game Completion** - Ending games and score calculation
+8. **Leaderboard Updates** - Score persistence and ranking
+9. **Streak Tracking** - Consecutive game streak validation
+
+## 📱 Usage
+
+### Creating a Family
+
+1. Open the app and enter your email
+2. Check your email for the magic link
+3. Tap "Create Family" and enter a family name
+4. Share the invite link with family members
+
+### Playing Trivia
+
+1. Navigate to the trivia lobby
+2. Wait for family members to join
+3. Host starts the game
+4. Answer 5 questions within the time limit
+5. View updated leaderboard with scores and streaks
+
+### Memory Vault
+
+1. Navigate to Memory Vault
+2. Upload photos or create text memories
+3. All content is automatically encrypted (AES-256)
+4. Share memories with family members
+
+## 🔒 Security Features
+
+- **Row-Level Security (RLS)** on all Supabase tables
+- **Magic Link Authentication** with token expiration
+- **End-to-End Encryption** for Memory Vault content
+- **Rate Limiting** on all API endpoints
+- **Input Validation** and sanitization
+
+## 📊 Leaderboard & Streaks
+
+The app tracks:
+- **Total Score**: Cumulative points across all games
+- **Current Streak**: Consecutive days with game participation  
+- **Best Streak**: Longest recorded consecutive streak
+- **Games Played**: Total number of trivia sessions
+
+## 🎯 API Endpoints
+
+### Authentication
+- `POST /auth/magic-link` - Generate magic link
+- `POST /auth/verify-link` - Validate magic link token
+
+### Family Management  
+- `POST /families/create` - Create new family
+- `POST /families/invite` - Send family invitation
+- `POST /families/join` - Join family via invite
+
+### Trivia Games
+- `POST /trivia/start-session` - Start new trivia session
+- `POST /trivia/submit-answer` - Submit answer
+- `POST /trivia/complete-session` - End trivia session
+- `POST /trivia/generate` - Generate AI trivia questions
+
+### Leaderboards
+- `GET /leaderboard/:familyId` - Get family leaderboard
+
+### WebSocket Events
+- `join-room` - Join game room
+- `start-game` - Host starts game
+- `submit-answer` - Submit answer in real-time
+- `end-game` - End current game
+
+## 🤖 AI Integration
+
+The app uses GPT-4o to generate trivia questions with:
+- **Mixed difficulty levels** (easy, medium, hard)
+- **Multiple categories** (general knowledge, pop culture, history, etc.)
+- **Family-friendly content** suitable for all ages
+- **Dynamic question generation** based on family preferences
+
+## 📈 Performance & Scalability
+
+- **WebSocket rooms** for real-time game sessions
+- **Supabase connection pooling** for database efficiency
+- **Rate limiting** to prevent API abuse
+- **Caching** for frequently accessed trivia questions
+- **Optimized React Native** performance with proper state management
+
+## 🔧 Development
+
+### Project Structure
+
+```
+family-together/
+├── frontend/          # React Native app
+├── backend/           # Node.js API server
+├── supabase/          # Database schema and policies
+└── shared/            # Shared TypeScript types
+```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run the E2E tests: `node run-e2e-test.js`
+5. Submit a pull request
 
 ## 📄 License
 
-Private project - All rights reserved.
+MIT License - see LICENSE file for details
 
 ---
 
-**Built with ❤️ for families who game together** 
+**🎮 Start bringing your family together with nightly trivia fun!** 

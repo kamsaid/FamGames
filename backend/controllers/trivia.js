@@ -1,4 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
+// Import GPT trivia generation service
+const { generateTriviaPack, getFallbackTriviaPack } = require('../services/gptTriviaService');
 
 // Initialize Supabase client with service role key for admin operations
 const supabase = createClient(
@@ -356,8 +358,93 @@ const completeSession = async (req, res) => {
   }
 };
 
+/**
+ * Generate new trivia questions using GPT-4o and store them in the database
+ * - Uses GPT-4o API to generate 5 family-friendly trivia questions
+ * - Stores generated questions in the questions table
+ * - Falls back to predefined questions if GPT generation fails
+ */
+const generateTrivia = async (req, res) => {
+  try {
+    const { custom_prompt } = req.body;
+    const user_id = req.user.id; // From auth middleware
+
+    // Check if user has permission to generate trivia (optional: could be admin-only)
+    // For now, any authenticated user can generate trivia
+
+    console.log('Starting GPT trivia generation...');
+    
+    // Generate trivia pack using GPT-4o
+    const result = await generateTriviaPack(custom_prompt);
+
+    let questionsToStore;
+    let generationSource;
+
+    if (result.success) {
+      questionsToStore = result.data.questions;
+      generationSource = 'gpt-4o';
+      console.log('GPT generation successful, storing questions...');
+    } else {
+      // Fall back to predefined questions if GPT fails
+      console.warn('GPT generation failed, using fallback questions:', result.error);
+      const fallbackResult = getFallbackTriviaPack();
+      questionsToStore = fallbackResult.data.questions;
+      generationSource = 'fallback';
+    }
+
+    // Prepare questions for database insertion
+    const questionsForDB = questionsToStore.map(q => ({
+      category: q.category,
+      question: q.question,
+      choices: q.choices,
+      answer: q.correct_answer,
+      difficulty: q.difficulty,
+      created_by: user_id,
+      generation_source: generationSource
+    }));
+
+    // Insert questions into the database
+    const { data: insertedQuestions, error: insertError } = await supabase
+      .from('questions')
+      .insert(questionsForDB)
+      .select();
+
+    if (insertError) {
+      console.error('Error inserting generated questions:', insertError);
+      return res.status(500).json({ 
+        error: 'Failed to store generated questions in database',
+        details: insertError.message
+      });
+    }
+
+    // Success response
+    res.status(201).json({
+      message: 'Trivia questions generated and stored successfully',
+      generation_source: generationSource,
+      questions_count: insertedQuestions.length,
+      questions: insertedQuestions.map(q => ({
+        id: q.id,
+        category: q.category,
+        question: q.question,
+        choices: q.choices,
+        difficulty: q.difficulty
+      })),
+      gpt_success: result.success,
+      ...(result.error && { gpt_error: result.error })
+    });
+
+  } catch (error) {
+    console.error('Unexpected error in generateTrivia:', error);
+    res.status(500).json({ 
+      error: 'Internal server error during trivia generation',
+      details: error.message
+    });
+  }
+};
+
 module.exports = {
   startTriviaSession,
   submitAnswer,
-  completeSession
+  completeSession,
+  generateTrivia
 }; 

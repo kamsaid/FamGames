@@ -209,4 +209,66 @@ CREATE POLICY "Service can read invites by token" ON family_invites
 
 -- RLS Policy: Service can update invite usage
 CREATE POLICY "Service can update invite usage" ON family_invites
-    FOR UPDATE USING (true); -- This will be restricted by service key access 
+    FOR UPDATE USING (true); -- This will be restricted by service key access
+
+-- Memory Vault table - stores encrypted family memories and media
+CREATE TABLE memory_vault (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+    created_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    memory_type VARCHAR(50) NOT NULL CHECK (memory_type IN ('photo', 'video', 'note', 'document')),
+    encrypted_file_path TEXT, -- Path to encrypted file in Supabase Storage
+    file_size_bytes INTEGER,
+    encryption_key_hint VARCHAR(255), -- Hint for family members to remember the key
+    metadata JSONB DEFAULT '{}', -- Additional metadata (tags, date taken, etc.)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS on memory_vault table
+ALTER TABLE memory_vault ENABLE ROW LEVEL SECURITY;
+
+-- Memory Vault RLS Policies
+-- Family members can view their family's memory vault items
+CREATE POLICY "Family members can view their family memory vault" ON memory_vault
+    FOR SELECT USING (
+        family_id IN (
+            SELECT family_id
+            FROM family_members
+            WHERE user_id = auth.uid()
+        )
+    );
+
+-- Family members can insert memory vault items for their family
+CREATE POLICY "Family members can create memory vault items" ON memory_vault
+    FOR INSERT WITH CHECK (
+        family_id IN (
+            SELECT family_id
+            FROM family_members
+            WHERE user_id = auth.uid()
+        )
+    );
+
+-- Only the creator or family admin can update memory vault items
+CREATE POLICY "Creator or admin can update memory vault items" ON memory_vault
+    FOR UPDATE USING (
+        created_by = auth.uid() OR
+        family_id IN (
+            SELECT family_id
+            FROM family_members
+            WHERE user_id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Only the creator or family admin can delete memory vault items
+CREATE POLICY "Creator or admin can delete memory vault items" ON memory_vault
+    FOR DELETE USING (
+        created_by = auth.uid() OR
+        family_id IN (
+            SELECT family_id
+            FROM family_members
+            WHERE user_id = auth.uid() AND role = 'admin'
+        )
+    ); 

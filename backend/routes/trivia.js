@@ -5,7 +5,8 @@ const router = express.Router();
 const {
   startTriviaSession,
   submitAnswer,
-  completeSession
+  completeSession,
+  generateTrivia
 } = require('../controllers/trivia');
 
 // Import authentication middleware
@@ -51,5 +52,20 @@ router.post('/submit-answer', authenticateToken, submitAnswer);
  * - leaderboard: Array of updated leaderboard entries for the family
  */
 router.post('/complete-session', authenticateToken, completeSession);
+
+/**
+ * POST /trivia/generate
+ * Generate new trivia questions using GPT-4o and store them in the database
+ * 
+ * Request body:
+ * - custom_prompt: Optional string to customize the trivia generation
+ * 
+ * Response:
+ * - generation_source: String indicating if questions came from GPT-4o or fallback
+ * - questions_count: Number of questions generated
+ * - questions: Array of generated questions (without correct answers)
+ * - gpt_success: Boolean indicating if GPT generation was successful
+ */
+router.post('/generate', authenticateToken, generateTrivia);
 
 module.exports = router; 
