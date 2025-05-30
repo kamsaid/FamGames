@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase, Family, FamilyMember } from '../services/supabase';
 import { useAuth } from './AuthContext';
+import getApiUrl from '../utils/getApiUrl';
 
 // Family context interface
 interface FamilyContextType {
@@ -22,7 +23,7 @@ export const FamilyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [currentFamily, setCurrentFamily] = useState<Family | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const { user, session } = useAuth(); // Get both user and session
 
   // Load user's family on user change
   useEffect(() => {
@@ -83,51 +84,53 @@ export const FamilyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  // Create a new family
+  // Helper function to get authorization header
+  const getAuthHeader = () => {
+    if (!session?.access_token) {
+      throw new Error('No valid session token available');
+    }
+    return `Bearer ${session.access_token}`;
+  };
+
+  // Create a new family via backend API
   const createFamily = async (familyName: string) => {
-    if (!user) throw new Error('User not authenticated');
+    if (!user || !session) throw new Error('User not authenticated');
 
-    const { data: family, error: familyError } = await supabase
-      .from('families')
-      .insert({
-        name: familyName,
-        created_by: user.id,
-      })
-      .select()
-      .single();
+    // Create via backend API; getApiUrl() resolves host for web vs. native
+    const response = await fetch(`${getApiUrl()}/families/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: getAuthHeader(),
+      },
+      body: JSON.stringify({ name: familyName }),
+    });
 
-    if (familyError) throw familyError;
-
-    // Add creator as admin
-    const { error: memberError } = await supabase
-      .from('family_members')
-      .insert({
-        user_id: user.id,
-        family_id: family.id,
-        role: 'admin',
-      });
-
-    if (memberError) throw memberError;
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Failed to create family');
+    }
 
     await refreshFamily();
   };
 
   // Join family using invite token
   const joinFamily = async (inviteToken: string) => {
-    if (!user) throw new Error('User not authenticated');
+    if (!user || !session) throw new Error('User not authenticated');
 
     // Call backend API to join family
-    const response = await fetch('http://localhost:3000/families/join', {
+    const response = await fetch(`${getApiUrl()}/families/join`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${user.id}`,
+        'Authorization': getAuthHeader(),
       },
-      body: JSON.stringify({ inviteToken }),
+      body: JSON.stringify({ token: inviteToken }), // Use 'token' instead of 'inviteToken'
     });
 
     if (!response.ok) {
-      throw new Error('Failed to join family');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to join family');
     }
 
     await refreshFamily();
@@ -135,13 +138,13 @@ export const FamilyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // Invite a new member to the family
   const inviteMember = async (email: string) => {
-    if (!user || !currentFamily) throw new Error('User not authenticated or no family');
+    if (!user || !currentFamily || !session) throw new Error('User not authenticated or no family');
 
-    const response = await fetch('http://localhost:3000/families/invite', {
+    const response = await fetch(`${getApiUrl()}/families/invite`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${user.id}`,
+        'Authorization': getAuthHeader(),
       },
       body: JSON.stringify({
         email,
@@ -150,7 +153,8 @@ export const FamilyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
 
     if (!response.ok) {
-      throw new Error('Failed to send invitation');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to send invitation');
     }
   };
 

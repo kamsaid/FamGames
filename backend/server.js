@@ -16,7 +16,8 @@ const gameService = require('./services/gameService');
 const leaderboardService = require('./services/leaderboardService');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+// Use a fixed development port to avoid conflicts (do not rely on external PORT env)
+const PORT = 3001;
 
 // Create HTTP server and integrate with socket.io
 const server = http.createServer(app);
@@ -765,8 +766,8 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Update to use server instead of app for listening
-server.listen(PORT, () => {
+// Update to use server instead of app for listening (bind to localhost)
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`🚀 Family Together API running on port ${PORT}`);
   console.log(`🎮 WebSocket server listening on /game namespace`);
-}); 
+});

@@ -26,6 +26,17 @@ const authenticateToken = async (req, res, next) => {
 
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
+    // Development bypass: accept 'dev-access-token' for local dev to skip Supabase auth
+    if (process.env.NODE_ENV !== 'production' && token === 'dev-access-token') {
+      req.user = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        email: 'dev@example.com',
+        aud: 'authenticated',
+        role: 'authenticated',
+      };
+      return next();
+    }
+
     // Verify token with Supabase
     const { data: { user }, error } = await supabase.auth.getUser(token);
 

@@ -1,5 +1,5 @@
 // Login screen with magic link authentication
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,9 +18,49 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Get auth methods from context
-  const { signInWithEmail } = useAuth();
+  const { signInWithEmail, bypassAuthForDev, isDevBypass } = useAuth();
+
+  // Check for auth errors from URL parameters (from WebAuthCallback)
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const authErrorParam = urlParams.get('auth_error');
+      
+      if (authErrorParam) {
+        let errorMessage = '';
+        switch (authErrorParam) {
+          case 'expired':
+            errorMessage = 'Your magic link has expired. Please request a new one.';
+            break;
+          case 'session':
+            errorMessage = 'Failed to establish session. Please try again.';
+            break;
+          case 'invalid':
+            errorMessage = 'Invalid authentication. Please try again.';
+            break;
+          case 'unexpected':
+            errorMessage = 'An unexpected error occurred. Please try again.';
+            break;
+          default:
+            errorMessage = 'Authentication failed. Please try again.';
+        }
+        
+        setAuthError(errorMessage);
+        
+        // Clear the error from URL
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+        
+        // Clear error after showing it
+        setTimeout(() => {
+          setAuthError(null);
+        }, 5000);
+      }
+    }
+  }, []);
 
   // Email validation function
   const isValidEmail = (email: string): boolean => {
@@ -43,6 +83,8 @@ export default function LoginScreen() {
 
     try {
       setLoading(true);
+      setAuthError(null); // Clear any previous errors
+      
       // Send magic link using AuthContext
       await signInWithEmail(email.trim());
       
@@ -60,10 +102,35 @@ export default function LoginScreen() {
     }
   };
 
+  // Handle development bypass
+  const handleDevBypass = () => {
+    if (!__DEV__) return;
+    
+    Alert.alert(
+      '🚧 Development Bypass',
+      'This will skip authentication and create a mock user session for testing purposes.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Bypass Auth',
+          style: 'destructive',
+          onPress: () => {
+            bypassAuthForDev();
+            console.log('🚧 Development bypass activated');
+          },
+        },
+      ]
+    );
+  };
+
   // Handle try again action
   const handleTryAgain = () => {
     setShowSuccess(false);
     setEmail('');
+    setAuthError(null);
   };
 
   // Success state UI
@@ -87,6 +154,16 @@ export default function LoginScreen() {
           >
             <Text style={styles.secondaryButtonText}>Use different email</Text>
           </TouchableOpacity>
+
+          {/* Development bypass button in success state */}
+          {__DEV__ && (
+            <TouchableOpacity 
+              style={styles.devBypassButton} 
+              onPress={handleDevBypass}
+            >
+              <Text style={styles.devBypassButtonText}>🚧 Skip Auth (Dev)</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -106,6 +183,22 @@ export default function LoginScreen() {
             Connect with your family through fun trivia games
           </Text>
         </View>
+
+        {/* Show auth error if present */}
+        {authError && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>⚠️ {authError}</Text>
+          </View>
+        )}
+
+        {/* Development bypass indicator */}
+        {__DEV__ && isDevBypass && (
+          <View style={styles.devBypassIndicator}>
+            <Text style={styles.devBypassIndicatorText}>
+              🚧 Development Bypass Active
+            </Text>
+          </View>
+        )}
 
         {/* Email input form */}
         <View style={styles.form}>
@@ -142,6 +235,16 @@ export default function LoginScreen() {
           <Text style={styles.helpText}>
             We'll send you a secure link to sign in without a password.
           </Text>
+
+          {/* Development bypass button */}
+          {__DEV__ && (
+            <TouchableOpacity 
+              style={styles.devBypassButton} 
+              onPress={handleDevBypass}
+            >
+              <Text style={styles.devBypassButtonText}>🚧 Skip Auth for Testing</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -175,6 +278,33 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  errorContainer: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 24,
+  },
+  errorText: {
+    color: '#dc2626',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  devBypassIndicator: {
+    backgroundColor: '#fefce8',
+    borderColor: '#fed7aa',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 24,
+  },
+  devBypassIndicatorText: {
+    color: '#92400e',
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   form: {
     width: '100%',
@@ -217,6 +347,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  devBypassButton: {
+    backgroundColor: '#f59e0b',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  devBypassButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   successContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -255,10 +398,13 @@ const styles = StyleSheet.create({
   secondaryButton: {
     paddingVertical: 12,
     paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
   },
   secondaryButtonText: {
-    fontSize: 16,
-    color: '#3b82f6',
-    fontWeight: '600',
+    color: '#6b7280',
+    fontSize: 14,
+    fontWeight: '500',
   },
 }); 

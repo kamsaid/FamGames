@@ -25,11 +25,10 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 const testConnection = async () => {
   try {
     // Simple test query to check if connection works
-    const { data, error } = await supabase
+    // Simple test query to check if connection works (count-only request)
+    const { error } = await supabase
       .from('questions')
-      .select('count(*)')
-      .limit(1);
-      
+      .select('*', { count: 'exact', head: true });
     if (error) {
       console.warn('⚠️ Supabase connection test failed:', error.message);
     } else {

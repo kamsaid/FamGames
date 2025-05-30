@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magic Link Debug - Family Together</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8fafc;
+        }
+        .container {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .section {
+            margin-bottom: 24px;
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        .section h3 {
+            margin: 0 0 12px 0;
+            color: #1f2937;
+        }
+        .param {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f3f4f6;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .error {
+            background: #fef2f2;
+            border-color: #fecaca;
+            color: #dc2626;
+        }
+        .success {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+            color: #166534;
+        }
+        .button {
+            background: #3b82f6;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 8px 8px 8px 0;
+        }
+        .button:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Magic Link Debug Tool</h1>
+        <p>This page helps debug Supabase magic link authentication issues.</p>
+
+        <div class="section">
+            <h3>Current URL Information</h3>
+            <div class="param">Full URL: <span id="fullUrl"></span></div>
+            <div class="param">Pathname: <span id="pathname"></span></div>
+            <div class="param">Search: <span id="search"></span></div>
+            <div class="param">Hash: <span id="hash"></span></div>
+        </div>
+
+        <div class="section">
+            <h3>URL Parameters (Hash)</h3>
+            <div id="hashParams"></div>
+        </div>
+
+        <div class="section">
+            <h3>URL Parameters (Search)</h3>
+            <div id="searchParams"></div>
+        </div>
+
+        <div class="section">
+            <h3>Authentication Status</h3>
+            <div id="authStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>Actions</h3>
+            <button class="button" onclick="window.location.href='/auth/callback'">Test Auth Callback</button>
+            <button class="button" onclick="window.location.href='/'">Go to Home</button>
+            <button class="button" onclick="clearStorage()">Clear Storage</button>
+            <button class="button" onclick="copyDebugInfo()">Copy Debug Info</button>
+        </div>
+    </div>
+
+    <script>
+        // Display current URL information
+        document.getElementById('fullUrl').textContent = window.location.href;
+        document.getElementById('pathname').textContent = window.location.pathname;
+        document.getElementById('search').textContent = window.location.search || '(none)';
+        document.getElementById('hash').textContent = window.location.hash || '(none)';
+
+        // Parse and display hash parameters
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const hashParamsDiv = document.getElementById('hashParams');
+        if (hashParams.toString()) {
+            for (const [key, value] of hashParams) {
+                const div = document.createElement('div');
+                div.className = 'param';
+                div.innerHTML = `<strong>${key}:</strong> ${value}`;
+                hashParamsDiv.appendChild(div);
+            }
+        } else {
+            hashParamsDiv.innerHTML = '<div class="param">No hash parameters found</div>';
+        }
+
+        // Parse and display search parameters
+        const searchParams = new URLSearchParams(window.location.search);
+        const searchParamsDiv = document.getElementById('searchParams');
+        if (searchParams.toString()) {
+            for (const [key, value] of searchParams) {
+                const div = document.createElement('div');
+                div.className = 'param';
+                div.innerHTML = `<strong>${key}:</strong> ${value}`;
+                searchParamsDiv.appendChild(div);
+            }
+        } else {
+            searchParamsDiv.innerHTML = '<div class="param">No search parameters found</div>';
+        }
+
+        // Check authentication status
+        const authStatusDiv = document.getElementById('authStatus');
+        
+        // Check for errors
+        const hashError = hashParams.get('error');
+        const searchError = searchParams.get('error');
+        
+        if (hashError || searchError) {
+            const errorCode = hashParams.get('error_code') || searchParams.get('error_code');
+            const errorDescription = hashParams.get('error_description') || searchParams.get('error_description');
+            
+            authStatusDiv.innerHTML = `
+                <div class="param error">
+                    <strong>❌ Authentication Error Detected</strong><br>
+                    Error: ${hashError || searchError}<br>
+                    Code: ${errorCode || 'N/A'}<br>
+                    Description: ${errorDescription || 'N/A'}
+                </div>
+            `;
+        } else if (hashParams.get('access_token')) {
+            authStatusDiv.innerHTML = `
+                <div class="param success">
+                    <strong>✅ Access Token Found</strong><br>
+                    This appears to be a successful authentication callback!
+                </div>
+            `;
+        } else {
+            authStatusDiv.innerHTML = `
+                <div class="param">
+                    <strong>ℹ️ No Authentication Data</strong><br>
+                    No access token or error found in URL.
+                </div>
+            `;
+        }
+
+        function clearStorage() {
+            localStorage.clear();
+            sessionStorage.clear();
+            alert('Browser storage cleared!');
+        }
+
+        function copyDebugInfo() {
+            const info = `
+Magic Link Debug Info:
+Full URL: ${window.location.href}
+Pathname: ${window.location.pathname}
+Search: ${window.location.search}
+Hash: ${window.location.hash}
+Hash Params: ${hashParams.toString()}
+Search Params: ${searchParams.toString()}
+User Agent: ${navigator.userAgent}
+Timestamp: ${new Date().toISOString()}
+            `.trim();
+            
+            navigator.clipboard.writeText(info).then(() => {
+                alert('Debug info copied to clipboard!');
+            }).catch(() => {
+                alert('Failed to copy. Debug info:\n\n' + info);
+            });
+        }
+    </script>
+</body>
+</html> 
