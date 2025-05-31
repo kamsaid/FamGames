@@ -3,7 +3,9 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const http = require('http'); // Added for socket.io integration
 const { Server } = require('socket.io'); // Import socket.io server
-require('dotenv').config();
+const path = require('path');
+// Load environment variables from backend/.env regardless of current working directory
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -766,8 +768,13 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Update to use server instead of app for listening (bind to localhost)
-server.listen(PORT, '127.0.0.1', () => {
+// Handle listen errors (e.g. firewall or permission issues)
+server.on('error', (err) => {
+  console.error(`Failed to start server on port ${PORT}:`, err.message);
+  process.exit(1);
+});
+// Start HTTP + WebSocket server on all network interfaces
+server.listen(PORT, () => {
   console.log(`🚀 Family Together API running on port ${PORT}`);
   console.log(`🎮 WebSocket server listening on /game namespace`);
 });

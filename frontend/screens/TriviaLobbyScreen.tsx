@@ -10,6 +10,9 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import type { RootStackParamList } from '../navigation/MainNavigator';
 import { useGameRoom } from '../contexts/GameRoomContext';
 import { useFamily } from '../contexts/FamilyContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +26,9 @@ interface FamilyMemberWithStatus {
 }
 
 export default function TriviaLobbyScreen() {
+  // Navigation hook
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+  
   // Context hooks for game, family, and auth state
   const { 
     joinRoom, 
@@ -34,10 +40,21 @@ export default function TriviaLobbyScreen() {
     socket 
   } = useGameRoom();
   const { currentFamily, familyMembers, loading: familyLoading, refreshFamily } = useFamily();
-  const { user } = useAuth();
+  const { user, isDevBypass } = useAuth();
 
   // Local state
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Add state for dev testing mode
+  const [isDevTestMode, setIsDevTestMode] = useState(false);
+
+  // Enable dev test mode automatically when dev bypass is active
+  useEffect(() => {
+    if (isDevBypass && __DEV__) {
+      console.log('🚧 Dev bypass detected, enabling test mode');
+      setIsDevTestMode(true);
+    }
+  }, [isDevBypass]);
 
   // Auto-join room when component mounts or family changes
   useEffect(() => {
@@ -56,15 +73,16 @@ export default function TriviaLobbyScreen() {
   // Navigate to game when game starts
   useEffect(() => {
     if (gameActive) {
-      // In a real app, this would navigate to the game screen
-      Alert.alert('Game Started!', 'The trivia game has begun!');
+      console.log('🎮 Game is active, navigating to TriviaGame screen');
+      // Navigate to the trivia game screen
+      navigation.navigate('TriviaGame');
     }
-  }, [gameActive]);
-
+  }, [gameActive, navigation]);
+  
   // Check if current user is admin (can start games)
   const isAdmin = familyMembers.find(member => 
     member.user_id === user?.id && member.role === 'admin'
-  );
+  ) || isDevBypass; // In dev mode, always treat user as admin
 
   // Create combined member list with online status
   const getMembersWithStatus = (): FamilyMemberWithStatus[] => {
@@ -96,27 +114,57 @@ export default function TriviaLobbyScreen() {
     }
   };
 
-  // Handle start game
+  // Handle start game (allow single-player in dev bypass)
   const handleStartGame = () => {
+    // In dev test mode, start game immediately without checks
+    if (isDevTestMode) {
+      console.log('🚧 Dev test mode: Starting game immediately');
+      startGame();
+      return;
+    }
+    
     if (!isAdmin) {
       Alert.alert('Permission Denied', 'Only family admins can start games.');
       return;
     }
-
-    if (players.length < 2) {
+    const minPlayers = isDevBypass ? 1 : 2;
+    if (players.length < minPlayers) {
       Alert.alert(
-        'Not Enough Players', 
-        'You need at least 2 players to start a trivia game. Wait for more family members to join!'
+        'Not Enough Players',
+        `You need at least ${minPlayers} player${minPlayers > 1 ? 's' : ''} to start a trivia game. ${
+          isDevBypass
+            ? 'Dev bypass allows solo play; adjust your settings.'
+            : 'Wait for more family members to join!'
+        }`
       );
       return;
     }
 
     Alert.alert(
       'Start Game?',
-      `Start a trivia game with ${players.length} players?`,
+      `Start a trivia game with ${players.length} player${players.length > 1 ? 's' : ''}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Start Game', onPress: startGame, style: 'default' }
+      ]
+    );
+  };
+  
+  // Add dev test bypass button
+  const handleDevTestBypass = () => {
+    Alert.alert(
+      '🚧 Development Test Mode',
+      'This will start the game immediately for testing purposes.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Start Test Game', 
+          onPress: () => {
+            console.log('🚧 Starting test game immediately');
+            startGame();
+          },
+          style: 'default' 
+        }
       ]
     );
   };
@@ -209,6 +257,13 @@ export default function TriviaLobbyScreen() {
             </TouchableOpacity>
           )}
         </View>
+        
+        {/* Dev test mode indicator */}
+        {isDevTestMode && (
+          <View style={styles.devModeIndicator}>
+            <Text style={styles.devModeText}>🚧 Dev Test Mode Active</Text>
+          </View>
+        )}
       </View>
 
       {/* Players count */}
@@ -216,7 +271,7 @@ export default function TriviaLobbyScreen() {
         <Text style={styles.playersCount}>
           {onlineCount} of {membersWithStatus.length} members online
         </Text>
-        {onlineCount >= 2 && (
+        {(onlineCount >= (isDevBypass ? 1 : 2) || isDevTestMode) && (
           <Text style={styles.readyText}>Ready to play! 🎯</Text>
         )}
       </View>
@@ -244,29 +299,47 @@ export default function TriviaLobbyScreen() {
 
       {/* Game actions */}
       <View style={styles.actionsContainer}>
-        {isAdmin ? (
+      {isAdmin || isDevTestMode ? (
+        <>
           <TouchableOpacity
             style={[
               styles.startButton,
-              (!socket?.connected || onlineCount < 2 || connecting) && styles.disabledButton
+              (!(isDevBypass || socket?.connected || isDevTestMode) || (onlineCount < (isDevBypass ? 1 : 2) && !isDevTestMode) || (connecting && !isDevTestMode)) && styles.disabledButton
             ]}
             onPress={handleStartGame}
-            disabled={!socket?.connected || onlineCount < 2 || connecting}
+            disabled={!isDevTestMode && (!(isDevBypass || socket?.connected) || onlineCount < (isDevBypass ? 1 : 2) || connecting)}
           >
             <Text style={styles.startButtonText}>
-              {onlineCount < 2 ? 'Waiting for players...' : 'Start Trivia Game'}
+              {isDevTestMode
+                ? 'Start Test Game 🚧'
+                : onlineCount < (isDevBypass ? 1 : 2)
+                ? 'Waiting for players...'
+                : 'Start Trivia Game'}
             </Text>
           </TouchableOpacity>
-        ) : (
-          <View style={styles.waitingContainer}>
-            <Text style={styles.waitingText}>
-              Waiting for admin to start the game...
-            </Text>
-            <Text style={styles.waitingSubtext}>
-              {onlineCount >= 2 ? 'Ready to play!' : `Need ${2 - onlineCount} more player(s)`}
-            </Text>
-          </View>
-        )}
+          
+          {/* Show bypass button in dev mode */}
+          {isDevBypass && !isDevTestMode && (
+            <TouchableOpacity
+              style={styles.devBypassButton}
+              onPress={handleDevTestBypass}
+            >
+              <Text style={styles.devBypassButtonText}>🚧 Enable Test Mode</Text>
+            </TouchableOpacity>
+          )}
+        </>
+      ) : (
+        <View style={styles.waitingContainer}>
+          <Text style={styles.waitingText}>
+            Waiting for admin to start the game...
+          </Text>
+          <Text style={styles.waitingSubtext}>
+            {onlineCount >= (isDevBypass ? 1 : 2)
+              ? 'Ready to play!'
+              : `Need ${(isDevBypass ? 1 : 2) - onlineCount} more player(s)`}
+          </Text>
+        </View>
+      )}
       </View>
     </View>
   );
@@ -504,5 +577,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9ca3af',
     textAlign: 'center',
+  },
+  devModeIndicator: {
+    marginTop: 8,
+    backgroundColor: '#fbbf24',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignSelf: 'center',
+  },
+  devModeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#92400e',
+  },
+  devBypassButton: {
+    marginTop: 12,
+    backgroundColor: '#fbbf24',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  devBypassButtonText: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

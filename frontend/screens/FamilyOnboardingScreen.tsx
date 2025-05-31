@@ -14,6 +14,9 @@ import {
 } from 'react-native';
 import { useFamily } from '../contexts/FamilyContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import type { RootStackParamList } from '../navigation/MainNavigator';
 
 type OnboardingMode = 'welcome' | 'create' | 'join';
 
@@ -26,6 +29,7 @@ export default function FamilyOnboardingScreen() {
 
   // Get family and auth context methods
   const { createFamily, joinFamily } = useFamily();
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList, 'FamilyOnboarding'>>();
   const { user } = useAuth();
 
   // Validate family name input
@@ -51,9 +55,19 @@ export default function FamilyOnboardingScreen() {
       await createFamily(familyName.trim());
       
       Alert.alert(
-        'Success!', 
+        'Success!',
         `Welcome to your new family "${familyName.trim()}"! You can now invite other family members.`,
-        [{ text: 'Continue', style: 'default' }]
+        [
+          {
+            text: 'Continue',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'MainTabs' }],
+              });
+            },
+          },
+        ]
       );
     } catch (error: any) {
       console.error('Create family error:', error);
@@ -79,9 +93,19 @@ export default function FamilyOnboardingScreen() {
       await joinFamily(inviteToken.trim());
       
       Alert.alert(
-        'Welcome!', 
+        'Welcome!',
         'You have successfully joined your family. Let the trivia games begin!',
-        [{ text: 'Continue', style: 'default' }]
+        [
+          {
+            text: 'Continue',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'MainTabs' }],
+              });
+            },
+          },
+        ]
       );
     } catch (error: any) {
       console.error('Join family error:', error);

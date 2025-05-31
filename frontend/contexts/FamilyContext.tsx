@@ -110,8 +110,18 @@ export const FamilyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const err = await response.json();
       throw new Error(err.error || 'Failed to create family');
     }
-
-    await refreshFamily();
+    const result = await response.json();
+    const newFamily = result.data?.family;
+    if (newFamily) {
+      // Immediately update context so MainNavigator can proceed
+      setCurrentFamily(newFamily);
+      setFamilyMembers([
+        { user_id: user.id, family_id: newFamily.id, role: 'admin', joined_at: new Date().toISOString() },
+      ]);
+    } else {
+      // Fallback to full refresh if no payload
+      await refreshFamily();
+    }
   };
 
   // Join family using invite token

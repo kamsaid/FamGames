@@ -7,6 +7,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Toast from 'react-native-toast-message';
 
 // Import context providers
 import { AuthProvider } from './contexts/AuthContext';
@@ -24,6 +26,10 @@ import WebAuthCallback from './screens/WebAuthCallback';
 // Import navigation component
 import MainNavigator from './navigation/MainNavigator';
 
+// Import UX helpers and toast config
+import { SoundManager } from './utils/uxHelpers';
+import { toastConfig } from './components/ToastNotification';
+
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -39,6 +45,17 @@ export default function App() {
       return <WebAuthCallback />;
     }
   }
+
+  // Initialize sound effects on app start
+  useEffect(() => {
+    // Initialize sounds for better UX (comment out if sound files not added yet)
+    // SoundManager.initialize();
+
+    // Cleanup on unmount
+    return () => {
+      // SoundManager.cleanup();
+    };
+  }, []);
 
   // Listen for deep links (mobile) and handle auth URLs
   useEffect(() => {
@@ -59,17 +76,20 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <FamilyProvider>
-          <GameRoomProvider>
-            <NavigationContainer>
-              <MainNavigator />
-            </NavigationContainer>
-            <StatusBar style="auto" />
-          </GameRoomProvider>
-        </FamilyProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <FamilyProvider>
+            <GameRoomProvider>
+              <NavigationContainer>
+                <MainNavigator />
+              </NavigationContainer>
+              <StatusBar style="auto" />
+              <Toast config={toastConfig} />
+            </GameRoomProvider>
+          </FamilyProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 } 

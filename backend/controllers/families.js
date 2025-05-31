@@ -97,18 +97,18 @@ const createFamily = async (req, res) => {
     }
 
     // Initialize leaderboard entry for the creator
-    const { error: leaderboardError } = await supabase
-      .from('leaderboards')
-      .insert([
-        {
-          family_id: family.id,
-          user_id: userId,
-          score: 0,
-          streak: 0
-        }
-      ]);
-
-    if (leaderboardError) {
+    try {
+      await supabase
+        .from('leaderboards')
+        .insert([
+          {
+            family_id: family.id,
+            user_id: userId,
+            total_score: 0,
+            current_streak: 0
+          }
+        ]);
+    } catch (leaderboardError) {
       console.error('Error creating leaderboard entry:', leaderboardError);
       // Non-fatal error, continue with success response
     }
@@ -390,18 +390,18 @@ const joinFamily = async (req, res) => {
     }
 
     // Initialize leaderboard entry for the new member
-    const { error: leaderboardError } = await supabase
-      .from('leaderboards')
-      .insert([
-        {
-          family_id: invitation.family_id,
-          user_id: userId,
-          score: 0,
-          streak: 0
-        }
-      ]);
-
-    if (leaderboardError) {
+    try {
+      await supabase
+        .from('leaderboards')
+        .insert([
+          {
+            family_id: invitation.family_id,
+            user_id: userId,
+            total_score: 0,
+            current_streak: 0
+          }
+        ]);
+    } catch (leaderboardError) {
       console.error('Error creating leaderboard entry:', leaderboardError);
       // Non-fatal error, continue with success
     }

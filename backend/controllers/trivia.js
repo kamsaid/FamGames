@@ -302,16 +302,16 @@ const completeSession = async (req, res) => {
         continue;
       }
 
-      const newScore = (currentEntry?.score || 0) + score;
-      const newStreak = score > 0 ? (currentEntry?.streak || 0) + 1 : 0;
+      const newScore = (currentEntry?.total_score || 0) + score;
+      const newStreak = score > 0 ? (currentEntry?.current_streak || 0) + 1 : 0;
 
       if (currentEntry) {
         // Update existing entry
         await supabase
           .from('leaderboards')
           .update({
-            score: newScore,
-            streak: newStreak,
+            total_score: newScore,
+            current_streak: newStreak,
             last_played_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
@@ -323,8 +323,8 @@ const completeSession = async (req, res) => {
           .insert({
             family_id,
             user_id: participant_user_id,
-            score: newScore,
-            streak: newStreak,
+            total_score: newScore,
+            current_streak: newStreak,
             last_played_at: new Date().toISOString()
           });
       }
@@ -333,12 +333,11 @@ const completeSession = async (req, res) => {
     // Fetch updated leaderboard
     const { data: leaderboard, error: leaderboardFetchError } = await supabase
       .from('leaderboards')
-      .select(`
-        *,
-        auth.users(email)
-      `)
+      .select(
+        `*,auth.users(email)`
+      )
       .eq('family_id', family_id)
-      .order('score', { ascending: false });
+      .order('total_score', { ascending: false });
 
     if (leaderboardFetchError) {
       console.error('Error fetching updated leaderboard:', leaderboardFetchError);
