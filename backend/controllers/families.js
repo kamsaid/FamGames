@@ -16,7 +16,25 @@ const supabase = createClient(
 const createFamily = async (req, res) => {
   try {
     const { name } = req.body;
-    const userId = req.user?.id; // Assuming auth middleware sets this
+    let userId = req.user?.id; // Assuming auth middleware sets this
+
+    // In development, ensure userId is a valid UUID; fallback to fixed dev UUID if not
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (process.env.NODE_ENV !== 'production' && (!userId || !uuidRegex.test(userId))) {
+      console.warn(`[dev] createFamily: invalid userId "${userId}", using default dev UUID`);
+      userId = '550e8400-e29b-41d4-a716-446655440000';
+      // In dev: ensure this dummy user exists in auth.users
+      try {
+        await supabase.auth.admin.createUser({
+          id: userId,
+          email: req.user?.email,
+          email_confirm: true,
+        });
+        console.log(`[dev] Supabase auth user created for fallback id ${userId}`);
+      } catch (err) {
+        console.warn(`[dev] could not create auth user for fallback id ${userId}:`, err.message);
+      }
+    }
 
     // Validate family name using utility function
     const nameValidation = validateFamilyName(name);
