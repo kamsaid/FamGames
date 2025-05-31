@@ -134,7 +134,7 @@ gameNamespace.on('connection', (socket) => {
 
   // Task 17: Implement start-game event
   socket.on('start-game', async (data) => {
-    const { familyId } = data;
+    const { familyId, topics = [], difficulty = 'mixed', ageGroup = 'mixed' } = data;
     
     // Validate required data
     if (!familyId) {
@@ -180,91 +180,167 @@ gameNamespace.on('connection', (socket) => {
         return;
       }
 
-      // Fetch 5 random trivia questions using the same logic as the REST API
-      let questions;
+      // Generate AI-powered questions
+      let questions = [];
+      let generationSource = 'database';
+      
       try {
         const { createClient } = require('@supabase/supabase-js');
+        const enhancedGptTriviaService = require('./services/enhancedGptTriviaService');
+        const topicService = require('./services/topicService');
+        
         const supabaseUrl = process.env.SUPABASE_URL;
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
         
-        if (!supabaseUrl || !supabaseKey || supabaseUrl === 'your-supabase-url') {
-          throw new Error('Supabase not configured');
-        }
-        
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
-        const { data: fetchedQuestions, error: questionsError } = await supabase
-          .from('questions')
-          .select('id, category, question, choices, answer, difficulty')
-          .limit(10); // Get more than 5 to allow for randomization
-
-        if (questionsError) {
-          throw questionsError;
-        }
-
-        questions = fetchedQuestions;
-      } catch (error) {
-        console.warn('⚠️ Supabase not configured, using mock questions for testing');
-        
-        // Mock questions for testing when Supabase is not available
-        questions = [
-          {
-            id: 1,
-            category: 'General Knowledge',
-            question: 'What is the capital of France?',
-            choices: ['London', 'Berlin', 'Paris', 'Madrid'],
-            answer: 'Paris',
-            difficulty: 'easy'
-          },
-          {
-            id: 2,
-            category: 'Science',
-            question: 'What is the chemical symbol for water?',
-            choices: ['H2O', 'CO2', 'O2', 'NaCl'],
-            answer: 'H2O',
-            difficulty: 'easy'
-          },
-          {
-            id: 3,
-            category: 'Sports',
-            question: 'How many players are on a basketball team on the court at one time?',
-            choices: ['4', '5', '6', '7'],
-            answer: '5',
-            difficulty: 'medium'
-          },
-          {
-            id: 4,
-            category: 'History',
-            question: 'In what year did World War II end?',
-            choices: ['1944', '1945', '1946', '1947'],
-            answer: '1945',
-            difficulty: 'medium'
-          },
-          {
-            id: 5,
-            category: 'Geography',
-            question: 'Which is the longest river in the world?',
-            choices: ['Amazon River', 'Nile River', 'Mississippi River', 'Yangtze River'],
-            answer: 'Nile River',
-            difficulty: 'hard'
-          },
-          {
-            id: 6,
-            category: 'Entertainment',
-            question: 'Who directed the movie "Jurassic Park"?',
-            choices: ['George Lucas', 'Steven Spielberg', 'James Cameron', 'Ridley Scott'],
-            answer: 'Steven Spielberg',
-            difficulty: 'medium'
-          },
-          {
-            id: 7,
-            category: 'Science',
-            question: 'What is the speed of light in vacuum?',
-            choices: ['299,792,458 m/s', '300,000,000 m/s', '150,000,000 m/s', '200,000,000 m/s'],
-            answer: '299,792,458 m/s',
-            difficulty: 'hard'
+        if (supabaseUrl && supabaseKey && supabaseUrl !== 'your-supabase-url') {
+          const supabase = createClient(supabaseUrl, supabaseKey);
+          
+          // Try AI generation first
+          if (topics && topics.length > 0) {
+            console.log('🤖 Generating AI questions with topics:', topics);
+            
+            // Validate and normalize topics
+            const validationResult = topicService.validateTopicSelection(topics, {
+              ageGroup,
+              maxTopics: 5
+            });
+            
+            const validTopics = validationResult.valid;
+            
+            // Convert topics to category weights
+            const categoryWeights = {};
+            validTopics.forEach(topic => {
+              categoryWeights[topic] = 1.0 / validTopics.length;
+            });
+            
+            // Generate AI questions
+            const aiResult = await enhancedGptTriviaService.generatePersonalizedTrivia({
+              familyId,
+              ageGroup,
+              difficultyLevel: difficulty,
+              categories: categoryWeights,
+              useCache: true
+            });
+            
+            if (aiResult.success && aiResult.data.questions.length > 0) {
+              questions = aiResult.data.questions.map(q => ({
+                id: q.id,
+                category: q.category,
+                question: q.question,
+                choices: q.choices,
+                answer: q.correct_answer,
+                difficulty: q.difficulty,
+                fun_fact: q.fun_fact,
+                hint: q.hint,
+                time_limit: q.timeLimit,
+                points: q.points
+              }));
+              generationSource = 'ai-personalized';
+              console.log('✅ AI questions generated successfully');
+            }
           }
-        ];
+          
+          // If no AI questions, try database
+          if (questions.length === 0) {
+            console.log('📚 Fetching questions from database');
+            
+            let query = supabase
+              .from('questions')
+              .select('id, category, question, choices, answer, difficulty, fun_fact, hint, time_limit, points');
+            
+            // Filter by topics if specified
+            if (topics && topics.length > 0) {
+              const normalizedTopics = topicService.normalizeTopicNames(topics);
+              query = query.in('category', normalizedTopics);
+            }
+            
+            // Filter by difficulty if specified
+            if (difficulty && difficulty !== 'mixed') {
+              query = query.eq('difficulty', difficulty);
+            }
+            
+            const { data: fetchedQuestions, error: questionsError } = await query.limit(20);
+            
+            if (!questionsError && fetchedQuestions && fetchedQuestions.length > 0) {
+              questions = fetchedQuestions;
+              generationSource = 'database';
+            }
+          }
+        }
+      } catch (error) {
+        console.error('⚠️ Error generating questions:', error);
+      }
+      
+      // Ultimate fallback: use basic test questions if nothing else works
+      if (questions.length === 0) {
+        console.warn('⚠️ Using fallback test questions');
+        
+        // Import the enhanced service for fallback questions
+        try {
+          const enhancedGptTriviaService = require('./services/enhancedGptTriviaService');
+          const fallbackResult = await enhancedGptTriviaService.generateSimpleTrivia(ageGroup, difficulty);
+          
+          if (fallbackResult.success && fallbackResult.data.questions.length > 0) {
+            questions = fallbackResult.data.questions;
+            generationSource = 'fallback-ai';
+          }
+        } catch (fallbackError) {
+          // Last resort: hardcoded questions
+          questions = [
+            {
+              id: '1',
+              category: 'general_knowledge',
+              question: 'What is the capital of France?',
+              choices: ['London', 'Berlin', 'Paris', 'Madrid'],
+              answer: 'Paris',
+              difficulty: 'easy',
+              time_limit: 20,
+              points: 100
+            },
+            {
+              id: '2',
+              category: 'science',
+              question: 'What is H2O commonly known as?',
+              choices: ['Hydrogen', 'Water', 'Oxygen', 'Salt'],
+              answer: 'Water',
+              difficulty: 'easy',
+              time_limit: 20,
+              points: 100
+            },
+            {
+              id: '3',
+              category: 'animals',
+              question: 'How many legs does a spider have?',
+              choices: ['6', '8', '10', '12'],
+              answer: '8',
+              difficulty: 'medium',
+              time_limit: 30,
+              points: 150
+            },
+            {
+              id: '4',
+              category: 'geography',
+              question: 'Which is the largest ocean?',
+              choices: ['Atlantic', 'Pacific', 'Indian', 'Arctic'],
+              answer: 'Pacific',
+              difficulty: 'medium',
+              time_limit: 30,
+              points: 150
+            },
+            {
+              id: '5',
+              category: 'riddles',
+              question: 'What has hands but cannot clap?',
+              choices: ['A statue', 'A clock', 'A mannequin', 'A robot'],
+              answer: 'A clock',
+              difficulty: 'easy',
+              time_limit: 20,
+              points: 100,
+              hint: 'It helps you tell time!'
+            }
+          ];
+          generationSource = 'hardcoded-fallback';
+        }
       }
 
       if (!questions || questions.length === 0) {
@@ -284,7 +360,11 @@ gameNamespace.on('connection', (socket) => {
         category: q.category,
         question: q.question,
         choices: q.choices,
-        difficulty: q.difficulty
+        difficulty: q.difficulty,
+        timeLimit: q.time_limit || 30,
+        points: q.points || 100,
+        ...(q.hint && { hint: q.hint }),
+        ...(q.fun_fact && { funFact: q.fun_fact })
       }));
 
       // Initialize scores for all players
@@ -300,7 +380,13 @@ gameNamespace.on('connection', (socket) => {
         currentQuestion: 0,
         scores: initialScores,
         startedAt: new Date(),
-        questionStartTime: new Date()
+        questionStartTime: new Date(),
+        metadata: {
+          generationSource,
+          topics: topics || [],
+          difficulty,
+          ageGroup
+        }
       });
 
       if (!updatedRoom) {
@@ -310,7 +396,7 @@ gameNamespace.on('connection', (socket) => {
         return;
       }
 
-      console.log(`🚀 Game started for family: ${familyId} with ${room.players.length} players`);
+      console.log(`🚀 Game started for family: ${familyId} with ${room.players.length} players (source: ${generationSource})`);
 
       // Send game started event to all players in the room
       gameNamespace.to(`family-${familyId}`).emit('game-started', {
@@ -327,6 +413,13 @@ gameNamespace.on('connection', (socket) => {
           }))
         },
         questions: questionsForClient,
+        metadata: {
+          generationSource,
+          topics: topics || [],
+          difficulty,
+          ageGroup,
+          aiGenerated: generationSource.includes('ai')
+        },
         message: `Game started! Get ready for ${questionsForClient.length} trivia questions.`
       });
 
@@ -334,8 +427,8 @@ gameNamespace.on('connection', (socket) => {
       gameNamespace.to(`family-${familyId}`).emit('question-delivered', {
         questionNumber: 1,
         question: questionsForClient[0],
-        timeLimit: 30, // 30 seconds per question
-        message: 'Question 1 is ready! You have 30 seconds to answer.'
+        timeLimit: questionsForClient[0].timeLimit,
+        message: `Question 1 is ready! You have ${questionsForClient[0].timeLimit} seconds to answer.`
       });
 
     } catch (error) {
@@ -419,35 +512,38 @@ gameNamespace.on('connection', (socket) => {
         return;
       }
 
+      // Check if answer is correct
+      const isCorrect = selectedAnswer.trim().toLowerCase() === currentQuestion.answer.trim().toLowerCase();
+      
       // Calculate points based on correctness and time
       let pointsEarned = 0;
-      const isCorrect = selectedAnswer === currentQuestion.answer;
+      const basePoints = currentQuestion.points || 100;
       
       if (isCorrect) {
-        // Base points for correct answer
-        let basePoints = 100;
-        
-        // Adjust points based on difficulty
+        // Base points for correct answer adjusted by difficulty
+        let difficultyMultiplier = 1;
         switch (currentQuestion.difficulty) {
           case 'easy':
-            basePoints = 100;
+            difficultyMultiplier = 1;
             break;
           case 'medium':
-            basePoints = 150;
+            difficultyMultiplier = 1.5;
             break;
           case 'hard':
-            basePoints = 200;
+            difficultyMultiplier = 2;
             break;
           default:
-            basePoints = 100;
+            difficultyMultiplier = 1;
         }
         
-        // Time bonus: Award bonus points for quick answers (max 50 bonus points)
-        const maxTimeForQuestion = 30; // 30 seconds
+        const adjustedBasePoints = Math.floor(basePoints * difficultyMultiplier);
+        
+        // Time bonus: Award bonus points for quick answers
+        const maxTimeForQuestion = currentQuestion.time_limit || 30;
         const actualTimeTaken = timeTaken || maxTimeForQuestion;
         const timeBonus = Math.max(0, Math.floor((maxTimeForQuestion - actualTimeTaken) * 50 / maxTimeForQuestion));
         
-        pointsEarned = basePoints + timeBonus;
+        pointsEarned = adjustedBasePoints + timeBonus;
       }
 
       // Record the answer
@@ -477,8 +573,8 @@ gameNamespace.on('connection', (socket) => {
 
       console.log(`✅ Answer processed for ${playerInfo.playerName}: ${isCorrect ? 'CORRECT' : 'INCORRECT'} (+${pointsEarned} points)`);
 
-      // Send confirmation to the submitting player
-      socket.emit('answer-submitted', {
+      // Prepare response with fun fact if available
+      const responseData = {
         success: true,
         questionNumber,
         isCorrect,
@@ -487,7 +583,15 @@ gameNamespace.on('connection', (socket) => {
         yourAnswer: selectedAnswer,
         newTotalScore: room.gameState.scores[playerInfo.userId],
         message: isCorrect ? `Correct! You earned ${pointsEarned} points.` : `Incorrect. The correct answer was: ${currentQuestion.answer}`
-      });
+      };
+
+      // Include fun fact if available (for AI-generated questions)
+      if (currentQuestion.fun_fact) {
+        responseData.funFact = currentQuestion.fun_fact;
+      }
+
+      // Send confirmation to the submitting player
+      socket.emit('answer-submitted', responseData);
 
       // Prepare updated scores for broadcast (with player names)
       const scoresWithNames = {};
@@ -534,17 +638,21 @@ gameNamespace.on('connection', (socket) => {
             category: nextQuestion.category,
             question: nextQuestion.question,
             choices: nextQuestion.choices,
-            difficulty: nextQuestion.difficulty
+            difficulty: nextQuestion.difficulty,
+            timeLimit: nextQuestion.time_limit || 30,
+            points: nextQuestion.points || 100,
+            ...(nextQuestion.hint && { hint: nextQuestion.hint }),
+            ...(nextQuestion.fun_fact && { funFact: nextQuestion.fun_fact })
           };
 
           setTimeout(() => {
             gameNamespace.to(`family-${familyId}`).emit('question-delivered', {
               questionNumber: nextQuestionNumber,
               question: questionForClient,
-              timeLimit: 30,
-              message: `Question ${nextQuestionNumber} is ready! You have 30 seconds to answer.`
+              timeLimit: questionForClient.timeLimit,
+              message: `Question ${nextQuestionNumber} is ready! You have ${questionForClient.timeLimit} seconds to answer.`
             });
-          }, 3000); // 3 second delay before next question
+          }, 5000); // 5 second delay before next question (increased from 3)
           
         } else {
           // Game is complete, trigger end-game processing directly

@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext';
 import { useFamily } from './FamilyContext';
 import getApiUrl from '../utils/getApiUrl';
 import { supabase } from '../services/supabase';
+import { showToast } from '../components/ToastNotification';
 
 // Game room context interface
 interface GamePlayer {
@@ -34,9 +35,20 @@ interface GameRoomContextType {
   finalScores: Record<string, number> | null;
   userScore: number;
   connecting: boolean;
+  gameMetadata: {
+    generationSource?: string;
+    topics?: string[];
+    difficulty?: string;
+    ageGroup?: string;
+    aiGenerated?: boolean;
+  } | null;
   joinRoom: () => Promise<void>;
   leaveRoom: () => void;
-  startGame: () => void;
+  startGame: (options?: {
+    topics?: string[];
+    difficulty?: string;
+    ageGroup?: string;
+  }) => void;
   submitAnswer: (answer: string) => void;
 }
 
@@ -58,6 +70,13 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [localQuestions, setLocalQuestions] = useState<GameQuestion[]>([]);
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
   const [connecting, setConnecting] = useState(false);
+  const [gameMetadata, setGameMetadata] = useState<{
+    generationSource?: string;
+    topics?: string[];
+    difficulty?: string;
+    ageGroup?: string;
+    aiGenerated?: boolean;
+  } | null>(null);
 
   // Handle client-side countdown each second based on timeRemaining
   useEffect(() => {
@@ -145,6 +164,19 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
         setTotalQuestions(data.totalQuestions || 5);
         setFinalScores(null);
         setUserScore(0);
+        
+        // Store game metadata
+        if (data.metadata) {
+          setGameMetadata(data.metadata);
+          console.log('Game metadata:', data.metadata);
+          
+          // Show toast notification about question source
+          if (data.metadata.aiGenerated) {
+            showToast.success('AI-Powered Questions!', `Generated using: ${data.metadata.topics?.join(', ') || 'mixed topics'}`);
+          } else if (data.metadata.generationSource === 'database') {
+            showToast.info('Classic Questions', 'Playing with curated trivia questions');
+          }
+        }
       });
 
       /**
@@ -160,13 +192,38 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
         console.log('Question delivered:', data);
 
         const index = data.questionNumber ? data.questionNumber - 1 : 0;
-        setCurrentQuestion(data.question);
+        const question = data.question;
+        
+        // Enhanced validation and logging
+        if (!question) {
+          console.error('ERROR: No question object in delivered data:', data);
+          return;
+        }
+        
+        if (!question.question) {
+          console.error('ERROR: Question object missing question text:', question);
+          console.log('Full question object:', JSON.stringify(question, null, 2));
+        }
+        
+        if (!question.choices || !Array.isArray(question.choices) || question.choices.length === 0) {
+          console.error('ERROR: Invalid choices in question:', question.choices);
+        }
+        
+        // Set the question even if some fields are missing, to help debug
+        setCurrentQuestion(question);
         setQuestionIndex(index);
-        setTimeRemaining(data.timeLimit || 30);
+        setTimeRemaining(data.timeLimit || question.timeLimit || 30);
         setQuestionStartTime(Date.now());
 
         // Reset answered flag for all players on new question
         setPlayers(prev => prev.map(player => ({ ...player, hasAnswered: false })));
+        
+        console.log(`[GameRoom] Question ${index + 1} set:`, {
+          questionText: question.question || 'MISSING',
+          category: question.category || 'MISSING',
+          choices: question.choices || [],
+          difficulty: question.difficulty || 'MISSING'
+        });
       });
 
       // Confirmation sent back to the submitting player only
@@ -259,171 +316,60 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Start game (host only; support solo-play in dev bypass)
-  const startGame = async () => {
-    if (isDevBypass) {
-      console.log('[dev] startGame: triggering local game start');
-      setGameActive(true);
-      
-      // Simulate having a player in dev mode
-      const mockPlayer: GamePlayer = {
-        id: user?.id || 'dev-user',
-        email: user?.email || 'dev@example.com',
-        score: 0,
-        hasAnswered: false,
-      };
-      setPlayers([mockPlayer]);
-      
-      // Fetch a question for solo dev testing
-      try {
-        const { data: questions, error } = await supabase
-          .from('questions')
-          .select('*')
-          .eq('is_active', true)
-          .limit(5); // Get 5 questions for a full game
-          
-        if (!error && questions && questions.length > 0) {
-          // Normalise questions from database into GameQuestion[]
-          const normalized = questions.map((q: any) => ({
-            id: q.id,
-            question: q.question,
-            choices: [q.choice_a, q.choice_b, q.choice_c, q.choice_d],
-            answer: q.correct_answer,
-            category: q.category || 'General',
-            difficulty: q.difficulty || 'Medium',
-          }));
-
-          // Persist locally for solo play progression
-          setLocalQuestions(normalized);
-
-          // Set first question
-          setCurrentQuestion(normalized[0]);
-          setQuestionIndex(0);
-          setTotalQuestions(normalized.length);
-          setTimeRemaining(30);
-          setQuestionStartTime(Date.now());
-
-          console.log('[dev] Game started with', normalized.length, 'questions');
-        } else {
-          // If no questions in database, create mock questions
-          console.log('[dev] No questions found, using mock questions');
-          const mockQuestions: GameQuestion[] = [
-            {
-              id: '1',
-              question: 'What is the capital of France?',
-              choices: ['London', 'Berlin', 'Paris', 'Madrid'],
-              answer: 'Paris',
-              category: 'Geography',
-              difficulty: 'Easy',
-            },
-            {
-              id: '2',
-              question: 'What planet is known as the Red Planet?',
-              choices: ['Earth', 'Mars', 'Jupiter', 'Saturn'],
-              answer: 'Mars',
-              category: 'Science',
-              difficulty: 'Easy',
-            },
-            {
-              id: '3',
-              question: 'Who wrote "Romeo and Juliet"?',
-              choices: ['Mark Twain', 'William Shakespeare', 'Charles Dickens', 'Jane Austen'],
-              answer: 'William Shakespeare',
-              category: 'Literature',
-              difficulty: 'Medium',
-            },
-          ];
-
-          setLocalQuestions(mockQuestions);
-          setCurrentQuestion(mockQuestions[0]);
-          setQuestionIndex(0);
-          setTotalQuestions(mockQuestions.length);
-          setTimeRemaining(30);
-          setQuestionStartTime(Date.now());
-        }
-      } catch (err) {
-        console.error('[dev] startGame fetch question error:', err);
-        
-        // Fallback to mock question on error
-        const mockQuestions: GameQuestion[] = [
-          {
-            id: '1',
-            question: 'Test Question: What is 2 + 2?',
-            choices: ['3', '4', '5', '6'],
-            answer: '4',
-            category: 'Math',
-            difficulty: 'Easy',
-          },
-        ];
-
-        setLocalQuestions(mockQuestions);
-        setCurrentQuestion(mockQuestions[0]);
-        setQuestionIndex(0);
-        setTotalQuestions(mockQuestions.length);
-        setTimeRemaining(30);
-        setQuestionStartTime(Date.now());
-      }
-      return;
-    }
+  const startGame = async (options?: {
+    topics?: string[];
+    difficulty?: string;
+    ageGroup?: string;
+  }) => {
+    // In dev mode, we still want to use the socket connection to get AI-generated questions
+    // The only difference is we allow single-player games
     
     if (socket && currentFamily) {
-      socket.emit('start-game', { familyId: currentFamily.id });
+      // Send game options to backend for AI generation
+      const gameOptions = {
+        familyId: currentFamily.id,
+        topics: options?.topics || [],
+        difficulty: options?.difficulty || 'mixed',
+        ageGroup: options?.ageGroup || 'mixed'
+      };
+      
+      console.log('Starting game with options:', gameOptions);
+      socket.emit('start-game', gameOptions);
+    } else {
+      console.error('[startGame] Cannot start game: socket not connected or no family selected');
+      console.log('Socket connected:', socket?.connected, 'Current family:', currentFamily?.id);
+      
+      // Only show error in non-dev mode
+      if (!isDevBypass) {
+        showToast.error('Connection Error', 'Please ensure you are connected to the game server');
+      }
     }
   };
 
   // Submit answer (handles both multiplayer and solo dev-bypass modes)
   const submitAnswer = (answer: string) => {
-    // Solo play (dev bypass)
-    if (isDevBypass) {
-      if (!currentQuestion || !gameActive) return;
-
-      const isCorrect = answer === currentQuestion.answer;
-      const pointsEarned = isCorrect ? 100 : 0; // Simple fixed scoring for dev mode
-
-      // Update score locally
-      setUserScore(prev => prev + pointsEarned);
-
-      // Mark player answered and update score in players list
-      setPlayers(prev => prev.map(player => {
-        if (player.id === (user?.id || 'dev-user')) {
-          return { ...player, hasAnswered: true, score: player.score + pointsEarned };
-        }
-        return player;
-      }));
-
-      // After short delay, proceed to next question or end game
-      setTimeout(() => {
-        const nextIndex = questionIndex + 1;
-
-        if (nextIndex < localQuestions.length) {
-          setCurrentQuestion(localQuestions[nextIndex]);
-          setQuestionIndex(nextIndex);
-          setTimeRemaining(30);
-          // Reset answered flags
-          setPlayers(prev => prev.map(p => ({ ...p, hasAnswered: false })));
-        } else {
-          // End game locally
-          setPlayers(prevPlayers => {
-            const final: Record<string, number> = {};
-            prevPlayers.forEach(p => {
-              final[p.id] = p.score;
-            });
-            setFinalScores(final);
-            setGameActive(false);
-            return prevPlayers;
-          });
-        }
-      }, 1500); // 1.5s delay to let user see result
-
-      return;
-    }
-
-    // Multiplayer flow
-    if (socket && currentQuestion && gameActive) {
+    // Always use socket connection for answer submission
+    if (socket && currentQuestion && gameActive && currentFamily) {
+      const timeTaken = Math.floor((Date.now() - questionStartTime) / 1000);
+      
+      console.log('[submitAnswer] Submitting answer:', {
+        answer,
+        questionNumber: questionIndex + 1,
+        timeTaken
+      });
+      
       socket.emit('submit-answer', {
-        familyId: currentFamily?.id,
+        familyId: currentFamily.id,
         questionNumber: questionIndex + 1,
         selectedAnswer: answer,
-        timeTaken: Math.floor((Date.now() - questionStartTime) / 1000),
+        timeTaken: timeTaken,
+      });
+    } else {
+      console.error('[submitAnswer] Cannot submit answer:', {
+        socketConnected: socket?.connected,
+        hasQuestion: !!currentQuestion,
+        gameActive,
+        hasFamily: !!currentFamily
       });
     }
   };
@@ -449,6 +395,7 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
     finalScores,
     userScore,
     connecting,
+    gameMetadata,
     joinRoom,
     leaveRoom,
     startGame,

@@ -19,6 +19,7 @@ import Animated, {
   FadeIn,
   SlideInRight,
   ZoomIn,
+  runOnJS,
 } from 'react-native-reanimated';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -67,6 +68,20 @@ export default function TriviaGameScreen() {
   const [streak, setStreak] = useState(0);
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const confettiRef = useRef<any>(null);
+  
+  // Add state to track if we're transitioning between questions
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  
+  // State to track game metadata
+  const [gameMetadata, setGameMetadata] = useState<any>(null);
+
+  // Listen for game started event to capture metadata
+  useEffect(() => {
+    // Listen for game-started event from WebSocket
+    if ((gameActive as any)?.metadata) {
+      setGameMetadata((gameActive as any).metadata);
+    }
+  }, [gameActive]);
 
   // Animation values
   const questionScale = useSharedValue(0);
@@ -83,24 +98,36 @@ export default function TriviaGameScreen() {
   // This guarantees previous answer/result visuals are cleared even if the
   // provider re-uses the same question object reference.
   useEffect(() => {
-    if (currentQuestion) {
-      // Reset states
-      setSelectedAnswer(null);
-      setHasSubmitted(false);
-      setShowResult(false);
+    console.log('[TriviaGame] Question index changed to:', questionIndex);
+    
+    // Mark as transitioning to prevent interaction during state reset
+    setIsTransitioning(true);
+    
+    // Reset all states for the new question
+    setSelectedAnswer(null);
+    setHasSubmitted(false);
+    setShowResult(false);
+    
+    // Small delay to ensure clean transition
+    setTimeout(() => {
+      setIsTransitioning(false);
+      
+      if (currentQuestion) {
+        // Animate question entrance
+        questionScale.value = 0;
+        questionScale.value = withSpring(1, { damping: 15, mass: 1 });
 
-      // Animate question entrance
-      questionScale.value = 0;
-      questionScale.value = withSpring(1, { damping: 15, mass: 1 });
-
-      // Play sound for new question
-      // SoundManager.play('timer_tick');
-    }
+        // Play sound for new question
+        // SoundManager.play('timer_tick');
+        
+        console.log('[TriviaGame] New question loaded:', currentQuestion.question);
+      }
+    }, 100);
   }, [questionIndex]);
 
   // Show result after submission
   useEffect(() => {
-    if (hasSubmitted && currentQuestion) {
+    if (hasSubmitted && currentQuestion && !isTransitioning) {
       // Delay to build suspense
       setTimeout(() => {
         setShowResult(true);
@@ -133,11 +160,33 @@ export default function TriviaGameScreen() {
         }
       }, 500);
     }
-  }, [hasSubmitted, currentQuestion, selectedAnswer, userScore]);
+  }, [hasSubmitted, currentQuestion, selectedAnswer, userScore, isTransitioning]);
+
+  // Automatically hide result banner (Correct / Incorrect) after a short delay so
+  // it doesn’t persist into the following question. The banner is useful
+  // feedback but shouldn’t clutter the screen.
+  useEffect(() => {
+    if (!showResult) return;
+
+    const timer = setTimeout(() => {
+      // Animate result banner out then hide
+      resultScale.value = withTiming(0, { duration: 200 }, () => {
+        runOnJS(setShowResult)(false);
+      });
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [showResult, questionIndex]);
 
   // Handle answer selection
   const handleAnswerSelect = (answer: string) => {
-    if (hasSubmitted || !gameActive) return;
+    console.log('[TriviaGame] Answer selected:', answer);
+    
+    // Prevent selection during transition or after submission
+    if (hasSubmitted || !gameActive || isTransitioning) {
+      console.log('[TriviaGame] Answer selection blocked - hasSubmitted:', hasSubmitted, 'isTransitioning:', isTransitioning);
+      return;
+    }
     
     setSelectedAnswer(answer);
     HapticManager.selection();
@@ -145,7 +194,12 @@ export default function TriviaGameScreen() {
 
   // Handle answer submission
   const handleSubmitAnswer = () => {
-    if (!selectedAnswer || hasSubmitted || !currentQuestion) return;
+    console.log('[TriviaGame] Submitting answer:', selectedAnswer);
+    
+    if (!selectedAnswer || hasSubmitted || !currentQuestion || isTransitioning) {
+      console.log('[TriviaGame] Submit blocked - selectedAnswer:', selectedAnswer, 'hasSubmitted:', hasSubmitted, 'isTransitioning:', isTransitioning);
+      return;
+    }
 
     // Submit answer
     submitAnswer(selectedAnswer);
@@ -362,19 +416,28 @@ export default function TriviaGameScreen() {
           </AnimatedCard>
         </View>
 
-        {/* Question */}
-        <Animated.View style={questionAnimatedStyle}>
+        {/* Question - Add better null check and loading state */}
+        {currentQuestion && currentQuestion.question ? (
+          <Animated.View style={questionAnimatedStyle}>
+            <AnimatedCard style={styles.questionCard} entrance="scale">
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryText}>{currentQuestion.category || 'General'}</Text>
+              </View>
+              <Text style={styles.questionText}>{currentQuestion.question}</Text>
+            </AnimatedCard>
+          </Animated.View>
+        ) : (
           <AnimatedCard style={styles.questionCard} entrance="scale">
             <View style={styles.categoryBadge}>
-              <Text style={styles.categoryText}>{currentQuestion.category}</Text>
+              <Text style={styles.categoryText}>Loading...</Text>
             </View>
-            <Text style={styles.questionText}>{currentQuestion.question}</Text>
+            <Text style={styles.questionText}>Preparing question...</Text>
           </AnimatedCard>
-        </Animated.View>
+        )}
 
         {/* Answer choices */}
         <View style={styles.answersContainer}>
-          {currentQuestion.choices.map((choice, index) => {
+          {currentQuestion && currentQuestion.choices && currentQuestion.choices.map((choice, index) => {
             const isSelected = selectedAnswer === choice;
             const isCorrect = choice === currentQuestion.answer;
             const showCorrectAnswer = showResult && isCorrect;
@@ -382,7 +445,7 @@ export default function TriviaGameScreen() {
             
             return (
               <Animated.View
-                key={index}
+                key={`${questionIndex}-${index}`} // Add questionIndex to key to force re-render
                 entering={SlideInRight.delay(100 * index)}
               >
                 <AnimatedButton
@@ -393,7 +456,7 @@ export default function TriviaGameScreen() {
                     showIncorrectAnswer ? 'danger' :
                     isSelected ? 'primary' : 'secondary'
                   }
-                  disabled={hasSubmitted}
+                  disabled={hasSubmitted || isTransitioning}
                   style={styles.answerButton}
                   icon={
                     <Text style={styles.answerLetter}>
@@ -407,7 +470,7 @@ export default function TriviaGameScreen() {
         </View>
 
         {/* Submit button */}
-        {!hasSubmitted && selectedAnswer && (
+        {!hasSubmitted && selectedAnswer && !isTransitioning && (
           <Animated.View entering={FadeIn}>
             <AnimatedButton
               onPress={handleSubmitAnswer}
@@ -420,7 +483,7 @@ export default function TriviaGameScreen() {
         )}
 
         {/* Result feedback */}
-        {showResult && (
+        {showResult && currentQuestion && (
           <Animated.View style={[styles.resultContainer, resultAnimatedStyle]}>
             <AnimatedCard entrance="scale">
               <Text style={[

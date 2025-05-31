@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "setup:dev-user": "node scripts/setup-dev-user.js",
-    "setup:dev": "npm run setup:dev-user"
+    "setup:dev": "npm run setup:dev-user",
+    "generate:questions": "node scripts/generate-initial-questions.js",
+    "setup:all": "npm run setup:dev && npm run generate:questions"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

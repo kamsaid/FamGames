@@ -119,7 +119,12 @@ export default function TriviaLobbyScreen() {
     // In dev test mode, start game immediately without checks
     if (isDevTestMode) {
       console.log('🚧 Dev test mode: Starting game immediately');
-      startGame();
+      // Start game with AI-powered questions using popular topics
+      startGame({
+        topics: ['science', 'animals', 'pop_culture', 'geography', 'riddles'],
+        difficulty: 'intermediate', 
+        ageGroup: 'mixed'
+      });
       return;
     }
     
@@ -145,7 +150,18 @@ export default function TriviaLobbyScreen() {
       `Start a trivia game with ${players.length} player${players.length > 1 ? 's' : ''}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Start Game', onPress: startGame, style: 'default' }
+        { 
+          text: 'Start Game', 
+          onPress: () => {
+            // Start game with AI-powered questions
+            startGame({
+              topics: ['science', 'animals', 'pop_culture', 'geography', 'riddles'],
+              difficulty: 'intermediate',
+              ageGroup: 'mixed'
+            });
+          },
+          style: 'default' 
+        }
       ]
     );
   };

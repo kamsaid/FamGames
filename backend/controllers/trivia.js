@@ -1,6 +1,8 @@
 const { createClient } = require('@supabase/supabase-js');
 // Import GPT trivia generation service
 const { generateTriviaPack, getFallbackTriviaPack } = require('../services/gptTriviaService');
+// Import enhanced AI service for topic-based generation
+const enhancedGptTriviaService = require('../services/enhancedGptTriviaService');
 
 // Initialize Supabase client with service role key for admin operations
 const supabase = createClient(
@@ -13,10 +15,17 @@ const supabase = createClient(
  * - Fetches 5 random questions from the database
  * - Creates a new trivia_session record
  * - Returns session details with questions
+ * - Now supports topic selection and AI personalization
  */
 const startTriviaSession = async (req, res) => {
   try {
-    const { family_id } = req.body;
+    const { 
+      family_id, 
+      use_ai = false,
+      topics = [],
+      difficulty = 'mixed',
+      age_group = 'mixed' 
+    } = req.body;
     const user_id = req.user.id; // From auth middleware
 
     // Validate required fields
@@ -62,26 +71,112 @@ const startTriviaSession = async (req, res) => {
       });
     }
 
-    // Fetch 5 random questions from different categories if possible
-    const { data: questions, error: questionsError } = await supabase
-      .from('questions')
-      .select('id, category, question, choices, difficulty')
-      .limit(5);
+    let questions = [];
+    let generationSource = 'database';
 
-    if (questionsError) {
-      console.error('Error fetching questions:', questionsError);
-      return res.status(500).json({ 
-        error: 'Failed to fetch trivia questions' 
-      });
+    // If AI generation is requested and topics are specified
+    if (use_ai && topics.length > 0) {
+      try {
+        console.log('🤖 Generating AI-powered questions with topics:', topics);
+        
+        // Convert topics array to category weights
+        const categoryWeights = {};
+        topics.forEach(topic => {
+          categoryWeights[topic.toLowerCase()] = 1.0 / topics.length;
+        });
+
+        // Generate personalized questions using enhanced AI service
+        const aiResult = await enhancedGptTriviaService.generatePersonalizedTrivia({
+          familyId: family_id,
+          ageGroup: age_group,
+          difficultyLevel: difficulty,
+          categories: categoryWeights,
+          useCache: true // Use cache to save API costs
+        });
+
+        if (aiResult.success && aiResult.data.questions.length > 0) {
+          // Store AI-generated questions in database for future use
+          const questionsForDB = aiResult.data.questions.map(q => ({
+            category: q.category,
+            question: q.question,
+            choices: q.choices,
+            answer: q.correct_answer,
+            difficulty: q.difficulty,
+            fun_fact: q.fun_fact,
+            hint: q.hint,
+            time_limit: q.timeLimit,
+            points: q.points,
+            created_by: user_id,
+            generation_source: 'enhanced-ai',
+            metadata: {
+              ai_generated: true,
+              topics_requested: topics,
+              personalized: true
+            }
+          }));
+
+          const { data: insertedQuestions, error: insertError } = await supabase
+            .from('questions')
+            .insert(questionsForDB)
+            .select('id, category, question, choices, difficulty, fun_fact, hint, time_limit, points');
+
+          if (!insertError && insertedQuestions) {
+            questions = insertedQuestions;
+            generationSource = 'ai-personalized';
+          }
+        }
+      } catch (aiError) {
+        console.error('AI generation failed, falling back to database:', aiError);
+      }
     }
 
-    if (!questions || questions.length === 0) {
-      return res.status(404).json({ 
-        error: 'No trivia questions available. Please add questions to the database.' 
-      });
+    // If no AI questions were generated, fetch from database
+    if (questions.length === 0) {
+      // Build query based on topics if specified
+      let query = supabase
+        .from('questions')
+        .select('id, category, question, choices, difficulty, fun_fact, hint, time_limit, points');
+
+      // Filter by topics if specified
+      if (topics.length > 0) {
+        query = query.in('category', topics.map(t => t.toLowerCase()));
+      }
+
+      // Filter by difficulty if specified and not 'mixed'
+      if (difficulty && difficulty !== 'mixed') {
+        query = query.eq('difficulty', difficulty);
+      }
+
+      // Fetch questions with limit
+      const { data: dbQuestions, error: questionsError } = await query.limit(20);
+
+      if (questionsError) {
+        console.error('Error fetching questions:', questionsError);
+        return res.status(500).json({ 
+          error: 'Failed to fetch trivia questions' 
+        });
+      }
+
+      if (!dbQuestions || dbQuestions.length === 0) {
+        // If no questions found with filters, try without filters
+        const { data: fallbackQuestions } = await supabase
+          .from('questions')
+          .select('id, category, question, choices, difficulty, fun_fact, hint, time_limit, points')
+          .limit(20);
+
+        if (!fallbackQuestions || fallbackQuestions.length === 0) {
+          return res.status(404).json({ 
+            error: 'No trivia questions available. Please add questions to the database.' 
+          });
+        }
+
+        questions = fallbackQuestions;
+      } else {
+        questions = dbQuestions;
+      }
     }
 
-    // Shuffle questions and take only 5 (in case we have more than 5)
+    // Shuffle questions and take only 5
     const shuffledQuestions = questions.sort(() => Math.random() - 0.5).slice(0, 5);
     const questionIds = shuffledQuestions.map(q => q.id);
 
@@ -92,7 +187,14 @@ const startTriviaSession = async (req, res) => {
         family_id,
         questions_used: questionIds,
         scores: {}, // Initialize empty scores object
-        completed: false
+        completed: false,
+        metadata: {
+          generation_source: generationSource,
+          topics_requested: topics,
+          difficulty_requested: difficulty,
+          age_group: age_group,
+          ai_generated: generationSource.includes('ai')
+        }
       })
       .select()
       .single();
@@ -104,13 +206,37 @@ const startTriviaSession = async (req, res) => {
       });
     }
 
+    // Track question performance initialization
+    if (generationSource === 'database') {
+      // Initialize question performance tracking for this family
+      for (const questionId of questionIds) {
+        await supabase
+          .from('question_performance')
+          .upsert({
+            question_id: questionId,
+            family_id,
+            times_shown: 1,
+            times_correct: 0,
+            last_shown: new Date().toISOString()
+          }, {
+            onConflict: 'question_id,family_id',
+            ignoreDuplicates: false
+          });
+      }
+    }
+
     // Return session with questions (without correct answers)
     const questionsForClient = shuffledQuestions.map(q => ({
       id: q.id,
       category: q.category,
       question: q.question,
       choices: q.choices,
-      difficulty: q.difficulty
+      difficulty: q.difficulty,
+      // Include enhanced metadata if available
+      timeLimit: q.time_limit || 30,
+      points: q.points || 100,
+      ...(q.hint && { hint: q.hint }), // Include hint only if available
+      ...(q.fun_fact && { funFact: q.fun_fact }) // Include fun fact only if available
     }));
 
     res.status(201).json({
@@ -119,7 +245,14 @@ const startTriviaSession = async (req, res) => {
         id: session.id,
         family_id: session.family_id,
         started_at: session.started_at,
-        questions: questionsForClient
+        questions: questionsForClient,
+        metadata: {
+          topics: topics,
+          difficulty: difficulty,
+          ageGroup: age_group,
+          aiGenerated: generationSource.includes('ai'),
+          generationSource
+        }
       }
     });
 
