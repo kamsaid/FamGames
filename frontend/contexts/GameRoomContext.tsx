@@ -50,6 +50,12 @@ interface GameRoomContextType {
     ageGroup?: string;
   }) => void;
   submitAnswer: (answer: string) => void;
+
+  lastResult: {
+    questionNumber: number;
+    isCorrect: boolean;
+    correctAnswer: string;
+  } | null;
 }
 
 // Create game room context
@@ -66,6 +72,11 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [timeRemaining, setTimeRemaining] = useState(30);
   const [finalScores, setFinalScores] = useState<Record<string, number> | null>(null);
   const [userScore, setUserScore] = useState(0);
+  const [lastResult, setLastResult] = useState<{
+    questionNumber: number;
+    isCorrect: boolean;
+    correctAnswer: string;
+  } | null>(null);
   // Keep a local list of questions for dev-bypass (solo play)
   const [localQuestions, setLocalQuestions] = useState<GameQuestion[]>([]);
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
@@ -234,6 +245,13 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
           setUserScore(data.newTotalScore);
         }
 
+        // Store result for current question
+        setLastResult({
+          questionNumber: data.questionNumber,
+          isCorrect: data.isCorrect,
+          correctAnswer: data.correctAnswer,
+        });
+
         setPlayers(prev => prev.map(player => {
           if (player.id === (user?.id || '')) {
             return {
@@ -400,6 +418,7 @@ export const GameRoomProvider: React.FC<{ children: ReactNode }> = ({ children }
     leaveRoom,
     startGame,
     submitAnswer,
+    lastResult,
   };
 
   return <GameRoomContext.Provider value={value}>{children}</GameRoomContext.Provider>;

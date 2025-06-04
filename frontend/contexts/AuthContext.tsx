@@ -1,6 +1,7 @@
 // Authentication context for managing user session state
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Platform } from 'react-native';
+import * as Linking from 'expo-linking';
 import { supabase, User } from '../services/supabase';
 import { Session } from '@supabase/supabase-js';
 
@@ -141,9 +142,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       console.log('AuthProvider: Sending magic link to:', email);
       
       // Construct proper redirect URL
+      // Web uses the dev-server origin; native uses the custom scheme created
+      // in app.json. We rely on Expo's Linking helper to generate it so it
+      // works in both development and production builds (handles prefixes
+      // like exp://, bare scheme, etc.).
       const redirectTo = Platform.OS === 'web'
         ? `${window.location.origin}/auth/callback`
-        : 'family-together://auth/callback';
+        : Linking.createURL('/auth/callback');
 
       console.log('AuthProvider: Redirect URL:', redirectTo);
 

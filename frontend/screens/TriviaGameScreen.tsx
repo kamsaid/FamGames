@@ -57,6 +57,7 @@ export default function TriviaGameScreen() {
     finalScores,
     userScore,
     submitAnswer,
+    lastResult,
   } = useGameRoom();
 
   // Local state
@@ -65,6 +66,12 @@ export default function TriviaGameScreen() {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [showResult, setShowResult] = useState(false);
+
+  // Determine correctness using data returned from backend when available
+  const currentQNumber = questionIndex + 1;
+  const backendResult = lastResult && lastResult.questionNumber === currentQNumber ? lastResult : null;
+  const isAnswerCorrect = backendResult ? backendResult.isCorrect : (selectedAnswer !== null && currentQuestion ? selectedAnswer === (currentQuestion as any).answer : false);
+  const correctAnswer = backendResult ? backendResult.correctAnswer : currentQuestion?.answer || '';
   const [streak, setStreak] = useState(0);
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const confettiRef = useRef<any>(null);
@@ -84,7 +91,8 @@ export default function TriviaGameScreen() {
   }, [gameActive]);
 
   // Animation values
-  const questionScale = useSharedValue(0);
+  // Start at 1 so the first question is visible immediately.
+  const questionScale = useSharedValue(1);
   const resultScale = useSharedValue(0);
 
   // Handle exit game
@@ -108,21 +116,15 @@ export default function TriviaGameScreen() {
     setHasSubmitted(false);
     setShowResult(false);
     
-    // Small delay to ensure clean transition
-    setTimeout(() => {
-      setIsTransitioning(false);
-      
-      if (currentQuestion) {
-        // Animate question entrance
-        questionScale.value = 0;
-        questionScale.value = withSpring(1, { damping: 15, mass: 1 });
+    // End transition and animate in new question immediately
+    setIsTransitioning(false);
 
-        // Play sound for new question
-        // SoundManager.play('timer_tick');
-        
-        console.log('[TriviaGame] New question loaded:', currentQuestion.question);
-      }
-    }, 100);
+    if (currentQuestion) {
+      questionScale.value = 0;
+      questionScale.value = withSpring(1, { damping: 15, mass: 1 });
+
+      console.log('[TriviaGame] New question loaded:', currentQuestion.question);
+    }
   }, [questionIndex]);
 
   // Show result after submission
@@ -134,7 +136,7 @@ export default function TriviaGameScreen() {
         resultScale.value = withSpring(1, { damping: 15, mass: 1 });
 
         // Check if answer is correct
-        const isCorrect = selectedAnswer === currentQuestion.answer;
+        const isCorrect = isAnswerCorrect;
         
         if (isCorrect) {
           // Update streak and correct answers
@@ -439,9 +441,9 @@ export default function TriviaGameScreen() {
         <View style={styles.answersContainer}>
           {currentQuestion && currentQuestion.choices && currentQuestion.choices.map((choice, index) => {
             const isSelected = selectedAnswer === choice;
-            const isCorrect = choice === currentQuestion.answer;
-            const showCorrectAnswer = showResult && isCorrect;
-            const showIncorrectAnswer = showResult && isSelected && !isCorrect;
+            const isCorrectChoice = backendResult ? (choice === backendResult.correctAnswer) : (currentQuestion && choice === (currentQuestion as any).answer);
+            const showCorrectAnswer = showResult && isCorrectChoice;
+            const showIncorrectAnswer = showResult && isSelected && !isCorrectChoice;
             
             return (
               <Animated.View
@@ -488,13 +490,13 @@ export default function TriviaGameScreen() {
             <AnimatedCard entrance="scale">
               <Text style={[
                 styles.resultText,
-                { color: selectedAnswer === currentQuestion.answer ? '#10b981' : '#ef4444' }
+                { color: isAnswerCorrect ? '#10b981' : '#ef4444' }
               ]}>
-                {selectedAnswer === currentQuestion.answer ? '✅ Correct!' : '❌ Incorrect'}
+                {isAnswerCorrect ? '✅ Correct!' : '❌ Incorrect'}
               </Text>
-              {selectedAnswer !== currentQuestion.answer && (
+              {!isAnswerCorrect && (
                 <Text style={styles.correctAnswerText}>
-                  The correct answer was: <Text style={styles.boldText}>{currentQuestion.answer}</Text>
+                  The correct answer was: <Text style={styles.boldText}>{correctAnswer}</Text>
                 </Text>
               )}
             </AnimatedCard>
