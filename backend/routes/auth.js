@@ -36,7 +36,7 @@ router.post('/magic-link', async (req, res) => {
       email: email,
       options: {
         // Redirect to frontend after successful login
-        emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback`
+        emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:8081'}/auth/callback`
       }
     });
 

@@ -39,9 +39,12 @@ export default function App() {
   if (Platform.OS === 'web') {
     const currentPath = window.location.pathname;
     const hasHash = window.location.hash;
+    const searchParams = new URLSearchParams(window.location.search);
+    const hasAuthCode = searchParams.has('code');
+    const hasError = searchParams.has('error');
     
     // Check if this is an auth callback URL
-    if (currentPath === '/auth/callback' || hasHash.includes('access_token') || hasHash.includes('error')) {
+    if (currentPath === '/auth/callback' || hasHash.includes('access_token') || hasHash.includes('error') || hasAuthCode || hasError) {
       return <WebAuthCallback />;
     }
   }

@@ -68,19 +68,64 @@ export default function WebAuthCallback() {
           return;
         }
 
-        // Check for successful authentication tokens
+        // Check for successful authentication tokens (in hash) or code (in search params)
         const accessToken = hashParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token');
         const tokenType = hashParams.get('token_type');
         const expiresIn = hashParams.get('expires_in');
+        const authCode = searchParams.get('code');
         
         console.log('Auth tokens found:', {
           hasAccessToken: !!accessToken,
           hasRefreshToken: !!refreshToken,
+          hasAuthCode: !!authCode,
           tokenType,
           expiresIn
         });
 
+        // Handle authorization code flow (magic link)
+        if (authCode) {
+          console.log('WebAuthCallback: Auth code found, exchanging for session...');
+          setDebugInfo('Processing authorization code...');
+          
+          try {
+            // Use Supabase's built-in method to handle the auth code
+            const { data, error: codeError } = await supabase.auth.exchangeCodeForSession(authCode);
+            
+            if (codeError) {
+              console.error('Code exchange error:', codeError);
+              setError('Failed to complete authentication. Please try again.');
+              setTimeout(() => {
+                window.location.replace('/?auth_error=code_exchange');
+              }, 2000);
+              return;
+            }
+
+            if (data.session) {
+              console.log('WebAuthCallback: Session established successfully via code');
+              console.log('User:', data.session.user.email);
+              setDebugInfo('Authentication successful! Redirecting...');
+              
+              // Clear the search params from URL before redirecting
+              window.history.replaceState({}, document.title, window.location.pathname);
+              
+              // Wait a moment for auth state to propagate, then redirect
+              setTimeout(() => {
+                window.location.replace('/');
+              }, 1500);
+              return;
+            }
+          } catch (err) {
+            console.error('Code exchange exception:', err);
+            setError('Authentication process failed. Please try again.');
+            setTimeout(() => {
+              window.location.replace('/?auth_error=code_exchange');
+            }, 2000);
+            return;
+          }
+        }
+
+        // Handle token-based flow (implicit/PKCE)
         if (accessToken) {
           console.log('WebAuthCallback: Tokens found in URL, setting session...');
           setDebugInfo('Setting up session with tokens...');

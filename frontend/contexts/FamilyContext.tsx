@@ -1,5 +1,5 @@
 // Family context for managing family data and operations
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { supabase, Family, FamilyMember } from '../services/supabase';
 import { useAuth } from './AuthContext';
 import getApiUrl from '../utils/getApiUrl';
@@ -23,24 +23,31 @@ export const FamilyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [currentFamily, setCurrentFamily] = useState<Family | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLoadingFamily, setIsLoadingFamily] = useState(false); // Prevent multiple simultaneous calls
   const { user, session } = useAuth(); // Get both user and session
 
   // Load user's family on user change
   useEffect(() => {
     if (user) {
-      loadUserFamily();
+      // Add a small delay to prevent rapid-fire requests
+      const timeoutId = setTimeout(() => {
+        loadUserFamily();
+      }, 100);
+      
+      return () => clearTimeout(timeoutId);
     } else {
       setCurrentFamily(null);
       setFamilyMembers([]);
       setLoading(false);
     }
-  }, [user]);
+  }, [user, loadUserFamily]);
 
   // Load user's current family from database
-  const loadUserFamily = async () => {
-    if (!user) return;
+  const loadUserFamily = useCallback(async () => {
+    if (!user || isLoadingFamily) return; // Prevent multiple simultaneous calls
 
     try {
+      setIsLoadingFamily(true);
       setLoading(true);
 
       // Get user's family membership
@@ -81,8 +88,9 @@ export const FamilyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Error loading family:', error);
     } finally {
       setLoading(false);
+      setIsLoadingFamily(false);
     }
-  };
+  }, [user, isLoadingFamily]);
 
   // Helper function to get authorization header
   const getAuthHeader = () => {
